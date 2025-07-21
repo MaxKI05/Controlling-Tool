@@ -1,7 +1,7 @@
 import openai
 import os
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def klassifiziere_verrechenbarkeit(zweck: str) -> str:
     prompt = (
@@ -10,7 +10,7 @@ def klassifiziere_verrechenbarkeit(zweck: str) -> str:
         f"Zweck: {zweck}"
     )
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": "Du bist ein professioneller Buchhaltungsassistent."},
@@ -19,5 +19,3 @@ def klassifiziere_verrechenbarkeit(zweck: str) -> str:
         temperature=0.1
     )
     return response.choices[0].message.content.strip()
-
-
