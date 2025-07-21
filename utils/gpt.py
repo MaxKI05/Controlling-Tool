@@ -18,4 +18,5 @@ def klassifiziere_verrechenbarkeit(zweck: str) -> str:
         ],
         temperature=0.1
     )
+
     return response.choices[0].message.content.strip()
