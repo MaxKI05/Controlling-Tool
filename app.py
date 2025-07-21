@@ -1,31 +1,30 @@
 import streamlit as st
 import pandas as pd
+import re
 from datetime import datetime
+import os
 
-# 📐 Seiten-Layout definieren
 st.set_page_config(
     page_title="Zeitdatenanalyse Dashboard",
     page_icon="📊",
     layout="wide"
 )
 
-# 🧱 Dummy-Daten für Vorschau
+# 📁 Datei laden
 @st.cache_data
-def load_dummy_data():
-    return pd.DataFrame({
-        "Mitarbeiter": ["Anna", "Ben", "Anna", "Clara", "Ben"],
-        "Projekt": ["Projekt X", "Projekt Y", "Projekt X", "Projekt Z", "Projekt Y"],
-        "Zweck": ["Analyse", "Meeting", "Workshop", "Analyse", "Schulung"],
-        "Datum": pd.to_datetime(["2024-01-10", "2024-01-15", "2024-02-05", "2024-02-20", "2024-03-10"]),
-        "Stunden": [3.5, 2.0, 5.0, 4.0, 6.0]
-    })
+def load_excel(file):
+    return pd.read_excel(file)
 
-df = load_dummy_data()
+# 🧠 Zweck aus Unterprojekt extrahieren
+def extrahiere_zweck(text):
+    if isinstance(text, str) and "-" in text:
+        zweck_raw = text.split("-")[-1].strip()
+        return re.sub(r"^\d+_?", "", zweck_raw)
+    return None
 
-# 🎛️ Sidebar mit Navigation
+# Sidebar Navigation
 with st.sidebar:
     st.markdown("### 🧭 Navigation")
-    
     page = st.radio(
         label="Menü",
         options=[
@@ -35,78 +34,94 @@ with st.sidebar:
             "📊 Analyse & Visualisierung",
             "⬇️ Export"
         ],
-        label_visibility="collapsed",
-        index=0
+        label_visibility="collapsed"
     )
 
     st.markdown("---")
     st.markdown("### ℹ️ Info")
-    st.markdown("Baustatus: **UI-Prototyp**")
-    st.caption("Funktionen werden schrittweise aktiviert.")
+    st.caption("Max KI Dashboard – v0.1")
 
-    st.markdown("---")
-    st.markdown("👤 **Max KI Dashboard**  \nVersion 0.1 – Juli 2025")
+# Globaler DataFrame (wird überschrieben durch Upload)
+df = None
 
-# 🏠 Startseite
+# Startseite
 if page == "🏠 Start":
-    st.title("👋 Willkommen im Zeitdatenanalyse-Dashboard")
-    
+    st.title("👋 Willkommen zur Zeitdatenanalyse")
     st.markdown("""
-    Dieses Tool unterstützt dich bei der Auswertung und Visualisierung von Zeitdaten aus Excel-Dateien.
+    Dieses Dashboard hilft dir, Zeitbuchungen aus Excel-Dateien zu analysieren und mit KI zu klassifizieren.
 
-    **Funktionen:**
-    - 📁 Excel-Dateien hochladen & analysieren
-    - 🧠 Automatische Zweck-Kategorisierung (auch per KI)
-    - 📊 Interaktive Visualisierungen und Auswertungen
-    - ⬇️ Export fertiger Ergebnisse
-
-    ---
+    **Was du tun kannst:**
+    - 📁 Datei hochladen
+    - 🧠 GPT-Kategorisierung: intern oder extern?
+    - 📊 Visualisieren
+    - ⬇️ Exportieren
     """)
 
-    st.subheader("📊 Beispielhafte Analyse (Demo-Daten)")
-
-    st.write("Stunden pro Zweck (Demo):")
-    demo_agg = df.groupby("Zweck")["Stunden"].sum().reset_index()
-    st.bar_chart(demo_agg.set_index("Zweck"))
-
-    st.markdown("---")
-    st.info("Navigiere mit der Sidebar durch die App.")
-
-# 📁 Upload-Seite
+# Upload
 elif page == "📁 Daten hochladen":
     st.title("📁 Excel-Datei hochladen")
-    st.markdown("Hier kannst du deine Excel-Zeitdaten hochladen und validieren.")
-    
+
     uploaded_file = st.file_uploader("Wähle eine `.xlsx` Datei", type=["xlsx"])
     if uploaded_file:
-        st.success("✅ Datei erfolgreich hochgeladen (Verarbeitung folgt).")
-        # TODO: parse Excel
-    else:
-        st.info("Beispieldaten werden verwendet.")
-        st.dataframe(df)
+        df = load_excel(uploaded_file)
+        st.success("✅ Datei erfolgreich geladen")
 
-# 🧠 Zweck-Kategorisierung
+        if "Unterprojekt" in df.columns:
+            df["Zweck"] = df["Unterprojekt"].apply(extrahiere_zweck)
+            st.subheader("📄 Extrahierte Zwecke")
+            st.dataframe(df[["Unterprojekt", "Zweck"]].head())
+        else:
+            st.error("❌ Spalte 'Unterprojekt' nicht gefunden.")
+
+# GPT-Zweck-Kategorisierung
 elif page == "🧠 Zweck-Kategorisierung":
     st.title("🧠 Zweck-Kategorisierung")
-    st.markdown("Bekannte Zwecke werden automatisch zugeordnet. Unbekannte Zwecke kannst du später per KI analysieren lassen.")
-    st.warning("⚠️ Funktion noch nicht implementiert.")
-    st.dataframe(df[["Zweck"]].drop_duplicates())
 
-# 📊 Visualisierung
+    if df is None:
+        st.warning("Bitte zuerst eine Excel-Datei hochladen.")
+    elif "Zweck" not in df.columns:
+        st.warning("Spalte 'Zweck' fehlt. Bitte Datei erneut prüfen.")
+    else:
+        st.markdown("GPT entscheidet, ob ein Zweck **extern verrechenbar** oder **intern** ist.")
+        unique_zwecke = df["Zweck"].dropna().unique()
+        unique_zwecke.sort()
+
+        st.write("🎯 Anzahl zu klassifizierender Zwecke:", len(unique_zwecke))
+
+        if st.button("🚀 GPT-Klassifizierung starten"):
+            from utils.gpt import klassifiziere_verrechenbarkeit
+
+            verrechnungsergebnisse = {}
+            with st.spinner("GPT denkt nach..."):
+                for zweck in unique_zwecke:
+                    kategorie = klassifiziere_verrechenbarkeit(zweck)
+                    verrechnungsergebnisse[zweck] = kategorie
+
+            df["Verrechenbarkeit"] = df["Zweck"].map(verrechnungsergebnisse)
+
+            st.success("✅ Klassifizierung abgeschlossen.")
+            st.dataframe(df[["Zweck", "Verrechenbarkeit"]].drop_duplicates().sort_values("Zweck"))
+
+            csv = df[["Zweck", "Verrechenbarkeit"]].drop_duplicates().to_csv(index=False).encode("utf-8")
+            st.download_button("⬇️ Klassifizierte Liste herunterladen", data=csv, file_name="verrechenbarkeit.csv")
+
+# Visualisierung
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Analyse & Visualisierung")
-    st.markdown("Hier erscheinen später interaktive Diagramme zu Zeitaufwand, Kategorien und Projekten.")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.selectbox("🔎 Wähle Mitarbeiter", options=["Alle", "Anna", "Ben", "Clara"])
-    with col2:
-        st.selectbox("📅 Zeitraum", options=["Alle", "2024-01", "2024-02", "2024-03"])
+    if df is None:
+        st.warning("Bitte zuerst eine Datei hochladen.")
+    else:
+        st.markdown("Hier erscheinen später interaktive Diagramme.")
+        st.dataframe(df.head())
 
-    st.info("📉 Diagramm-Platzhalter (Plot folgt)")
-
-# ⬇️ Export
+# Export
 elif page == "⬇️ Export":
-    st.title("⬇️ Export der aggregierten Daten")
-    st.markdown("Hier kannst du deine Auswertung als Excel-Datei herunterladen.")
-    st.download_button("Download Excel-Datei", data=b"", file_name="zeitdaten_auswertung.xlsx", disabled=True)
+    st.title("⬇️ Datenexport")
+
+    if df is not None:
+        excel_data = df.to_excel(index=False, engine='openpyxl')
+        st.download_button("⬇️ Vollständige Tabelle exportieren", data=excel_data, file_name="zeitdaten_export.xlsx")
+    else:
+        st.info("Kein Datensatz verfügbar.")
+
