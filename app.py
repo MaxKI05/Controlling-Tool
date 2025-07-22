@@ -5,14 +5,14 @@ import os
 import plotly.express as px
 from io import BytesIO
 
-# 📐 Layout (ohne Emoji im page_icon)
+# ⚙️ Layout
 st.set_page_config(
     page_title="Zeitdatenanalyse Dashboard",
-    page_icon=None,
+    page_icon="⚙️",
     layout="wide"
 )
 
-# 📥 Excel laden
+# 📅 Excel laden
 @st.cache_data
 def load_excel(file):
     return pd.read_excel(file)
@@ -24,7 +24,7 @@ def extrahiere_zweck(text):
         return re.sub(r"^\d+_?", "", zweck_raw)
     return None
 
-# 📁 Mapping laden/speichern
+# 📂 Mapping laden/speichern
 def lade_mapping():
     if os.path.exists("mapping.csv"):
         return pd.read_csv("mapping.csv")
@@ -35,43 +35,47 @@ def speichere_mapping(mapping_df):
     mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
     mapping_df.to_csv("mapping.csv", index=False)
 
-# Session init
+# 🔄 Session init
 df = st.session_state.get("df", None)
 if "mapping_df" not in st.session_state:
     st.session_state["mapping_df"] = lade_mapping()
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### Navigation")
+    st.markdown("### 🗺️ Navigation")
     page = st.radio(
         label="Menü",
         options=[
-            "Start",
-            "Daten hochladen",
-            "Zweck-Kategorisierung",
-            "Analyse & Visualisierung",
-            "Export"
+            "🏠 Start",
+            "📁 Daten hochladen",
+            "🧠 Zweck-Kategorisierung",
+            "📊 Analyse & Visualisierung",
+            "⬇️ Export"
         ],
         label_visibility="collapsed"
     )
+    if st.button("🔄 Zurücksetzen"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
     st.markdown("---")
-    st.markdown("Max KI Dashboard – v0.1")
+    st.markdown("🧠 Max KI Dashboard – v0.2")
 
-# Startseite
-if page == "Start":
-    st.title("Willkommen im Zeitdatenanalyse-Dashboard")
+# 🏠 Startseite
+if page == "🏠 Start":
+    st.title("👋 Willkommen im Zeitdatenanalyse-Dashboard")
     st.markdown("""
     **Was kann dieses Tool?**
 
-    - Excel-Zeitdaten hochladen
-    - KI-gestützte Klassifizierung (intern/extern)
-    - Interaktive Diagramme
-    - Export der Ergebnisse
+    - 📁 Excel-Zeitdaten hochladen
+    - 🤖 KI-gestützte Klassifizierung (intern/extern)
+    - 📊 Interaktive Diagramme & Übersichten
+    - 📤 Export der Ergebnisse
     """)
 
-# Datei hochladen
-elif page == "Daten hochladen":
-    st.title("Excel-Datei hochladen")
+# 📁 Datei hochladen
+elif page == "📁 Daten hochladen":
+    st.title("📁 Excel-Datei hochladen")
     uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei hoch", type=["xlsx"])
 
     if uploaded_file:
@@ -90,112 +94,75 @@ elif page == "Daten hochladen":
 
             if dauer_spalte:
                 df["Dauer"] = pd.to_numeric(df[dauer_spalte], errors="coerce").fillna(0)
+                if (df["Dauer"] < 0).any():
+                    st.warning("⚠️ Es wurden negative Werte in der Stundenspalte gefunden.")
             else:
                 df["Dauer"] = 1.0
 
             st.session_state["df"] = df
             st.success("✅ Datei erfolgreich geladen.")
-            st.subheader("Vorschau der Daten")
+            st.subheader("📄 Vorschau der Daten")
             st.dataframe(df)
 
-# Zweck-Kategorisierung
-elif page == "Zweck-Kategorisierung":
-    st.title("Zweck-Kategorisierung & Mapping")
-
-    if df is None or "Zweck" not in df.columns:
-        st.warning("Bitte zuerst eine Excel-Datei hochladen.")
-    else:
-        mapping_df = st.session_state["mapping_df"]
-        bekannte_zwecke = set(mapping_df["Zweck"])
-        aktuelle_zwecke = set(df["Zweck"].dropna())
-        neue_zwecke = aktuelle_zwecke - bekannte_zwecke
-
-        st.markdown(f"Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
-
-        if st.button("Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
-            from utils.gpt import klassifiziere_verrechenbarkeit
-            neue_mapping = []
-
-            with st.spinner("GPT klassifiziert neue Zwecke..."):
-                for zweck in neue_zwecke:
-                    kat = klassifiziere_verrechenbarkeit(zweck)
-                    neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
-
-            new_df = pd.DataFrame(neue_mapping)
-            mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
-            mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
-            st.session_state["mapping_df"] = mapping_df
-            speichere_mapping(mapping_df)
-
-            df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-            df = df.merge(mapping_df, on="Zweck", how="left")
-            st.session_state["df"] = df
-
-            st.success("✅ Mapping mit GPT aktualisiert.")
-
-        tab1, tab2 = st.tabs(["Aktuelles Mapping", "Manuell bearbeiten"])
-
-        with tab1:
-            st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
-
-        with tab2:
-            edited_df = st.data_editor(
-                mapping_df,
-                num_rows="dynamic",
-                use_container_width=True,
-                key="mapping_editor"
-            )
-
-            if st.button("Änderungen speichern"):
-                st.session_state["mapping_df"] = edited_df
-                speichere_mapping(edited_df)
-
-                if "df" in st.session_state:
-                    df = st.session_state["df"]
-                    df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-                    df = df.merge(edited_df, on="Zweck", how="left")
-                    st.session_state["df"] = df
-
-                st.success("✅ Mapping gespeichert.")
-
-        df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-        df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
-        st.session_state["df"] = df
-
-# Analyse & Visualisierung
-elif page == "Analyse & Visualisierung":
-    st.title("Verrechenbarkeit pro Mitarbeiter")
+# 📊 Analyse & Visualisierung
+elif page == "📊 Analyse & Visualisierung":
+    st.title("📊 Analyseübersicht")
 
     if df is None or "Verrechenbarkeit" not in df.columns:
         st.warning("Bitte zuerst Datei hochladen und Mapping durchführen.")
     else:
-        mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
-        selected = st.selectbox("Mitarbeiter auswählen", options=mitarbeiterliste)
+        df = df[df["Verrechenbarkeit"].isin(["Intern", "Extern"])]
 
-        df_user = df[df["Mitarbeiter"] == selected]
+        # Filteroptionen
+        with st.expander("🔍 Filteroptionen"):
+            mitarbeiter = st.multiselect("👤 Mitarbeiter filtern", df["Mitarbeiter"].unique())
+            projekte = st.multiselect("🗂️ Projekte filtern", df["Zweck"].unique())
+            datum_min = df["Datum"].min() if "Datum" in df.columns else None
+            datum_max = df["Datum"].max() if "Datum" in df.columns else None
+            datum_range = st.date_input("🗓️ Zeitraum", [datum_min, datum_max]) if datum_min and datum_max else None
 
-        if "Dauer" not in df_user.columns:
-            st.error("❌ Keine 'Dauer'-Spalte gefunden. Bitte sicherstellen, dass in der Excel eine Stunden-Spalte vorhanden ist.")
-            st.stop()
+        df_filtered = df.copy()
+        if mitarbeiter:
+            df_filtered = df_filtered[df_filtered["Mitarbeiter"].isin(mitarbeiter)]
+        if projekte:
+            df_filtered = df_filtered[df_filtered["Zweck"].isin(projekte)]
+        if datum_range and "Datum" in df.columns:
+            df_filtered["Datum"] = pd.to_datetime(df_filtered["Datum"], errors="coerce")
+            df_filtered = df_filtered[(df_filtered["Datum"] >= datum_range[0]) & (df_filtered["Datum"] <= datum_range[1])]
 
-        dauer_summe = df_user.groupby("Verrechenbarkeit")["Dauer"].sum()
-        gesamt = dauer_summe.sum()
-        anteile = (dauer_summe / gesamt * 100).round(1)
+        # Zusammenfassung
+        st.subheader("📋 Übersicht pro Mitarbeiter")
+        summary = df_filtered.groupby(["Mitarbeiter", "Verrechenbarkeit"])["Dauer"].sum().unstack(fill_value=0)
+        summary["Gesamt"] = summary.sum(axis=1)
+        summary["% Intern"] = (summary.get("Intern", 0) / summary["Gesamt"] * 100).round(1)
+        summary["% Extern"] = (summary.get("Extern", 0) / summary["Gesamt"] * 100).round(1)
 
-        st.subheader(f"Aufteilung für: {selected}")
-        st.write(anteile.astype(str) + " %")
+        if "Datum" in df_filtered.columns:
+            letzter_eintrag = df_filtered.groupby("Mitarbeiter")["Datum"].max()
+            summary["Letzter Eintrag"] = letzter_eintrag
+
+        st.dataframe(summary.reset_index(), use_container_width=True)
+
+        # Visualisierung
+        st.subheader("📈 Visualisierung auswählen")
+        mitarbeiter_liste = summary.index.tolist()
+        selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiter_liste)
+
+        user_data = summary.loc[selected]
+        st.columns(2)[0].metric("Intern (h)", f"{user_data.get('Intern', 0):.1f}")
+        st.columns(2)[1].metric("Extern (h)", f"{user_data.get('Extern', 0):.1f}")
 
         fig = px.pie(
-            names=anteile.index,
-            values=anteile.values,
-            title="Anteil Intern vs Extern (nach Stunden)",
+            names=["Intern", "Extern"],
+            values=[user_data.get("Intern", 0), user_data.get("Extern", 0)],
+            title=f"Anteil für {selected}",
             hole=0.4
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# Export
-elif page == "Export":
-    st.title("Datenexport")
+# ⬇️ Export
+elif page == "⬇️ Export":
+    st.title("⬇️ Datenexport")
 
     if df is not None:
         export_df = df.copy()
@@ -225,11 +192,11 @@ elif page == "Export":
             export_df.to_excel(writer, index=False, sheet_name="Originaldaten")
 
         st.download_button(
-            "Gesamtauswertung als Excel herunterladen",
+            "📤 Gesamtauswertung als Excel herunterladen",
             data=output.getvalue(),
             file_name="zeitdaten_auswertung.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.info("Bitte zuerst Daten hochladen und klassifizieren.")
+        st.info("ℹ️ Bitte zuerst Daten hochladen und klassifizieren.")
 
