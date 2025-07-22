@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import re
-from datetime import datetime
 import os
 import plotly.express as px
 
@@ -17,14 +16,14 @@ st.set_page_config(
 def load_excel(file):
     return pd.read_excel(file)
 
-# 🧠 Zweck aus Unterprojekt extrahieren
+# 🧠 Zweck extrahieren
 def extrahiere_zweck(text):
     if isinstance(text, str) and "-" in text:
         zweck_raw = text.split("-")[-1].strip()
         return re.sub(r"^\d+_?", "", zweck_raw)
     return None
 
-# 📁 Mapping laden oder erstellen
+# 📁 Mapping laden/speichern
 def lade_mapping():
     if os.path.exists("mapping.csv"):
         return pd.read_csv("mapping.csv")
@@ -35,7 +34,7 @@ def speichere_mapping(mapping_df):
     mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
     mapping_df.to_csv("mapping.csv", index=False)
 
-# 🔄 Globaler DF aus Session
+# Session init
 df = st.session_state.get("df", None)
 if "mapping_df" not in st.session_state:
     st.session_state["mapping_df"] = lade_mapping()
@@ -78,41 +77,50 @@ elif page == "📁 Daten hochladen":
         df = load_excel(uploaded_file)
 
         if "Unterprojekt" not in df.columns or "Mitarbeiter" not in df.columns:
-            st.error("❌ Erforderliche Spalten 'Unterprojekt' oder 'Mitarbeiter' fehlen.")
+            st.error("❌ Spalten 'Unterprojekt' oder 'Mitarbeiter' fehlen.")
         else:
             df["Zweck"] = df["Unterprojekt"].apply(extrahiere_zweck)
             st.session_state["df"] = df
-
-            st.success("✅ Datei erfolgreich geladen und verarbeitet.")
-            st.subheader("📄 Hochgeladene Tabelle")
+            st.success("✅ Datei erfolgreich geladen.")
+            st.subheader("📄 Vorschau der Daten")
             st.dataframe(df)
 
-# 🧠 Zweck-Kategorisierung und Mapping
-st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
+# 🧠 Zweck-Kategorisierung
+elif page == "🧠 Zweck-Kategorisierung":
+    st.title("🧠 Zweck-Kategorisierung & Mapping")
 
-if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
-    from utils.gpt import klassifiziere_verrechenbarkeit
-    neue_mapping = []
+    if df is None or "Zweck" not in df.columns:
+        st.warning("Bitte zuerst eine Excel-Datei hochladen.")
+    else:
+        mapping_df = st.session_state["mapping_df"]
+        bekannte_zwecke = set(mapping_df["Zweck"])
+        aktuelle_zwecke = set(df["Zweck"].dropna())
+        neue_zwecke = aktuelle_zwecke - bekannte_zwecke
 
-    with st.spinner("GPT klassifiziert neue Zwecke..."):
-        for zweck in neue_zwecke:
-            kat = klassifiziere_verrechenbarkeit(zweck)
-            neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
+        st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
 
-    new_df = pd.DataFrame(neue_mapping)
-    mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
-    mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
-    st.session_state["mapping_df"] = mapping_df
-    speichere_mapping(mapping_df)
+        if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
+            from utils.gpt import klassifiziere_verrechenbarkeit
+            neue_mapping = []
 
-    df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-    df = df.merge(mapping_df, on="Zweck", how="left")
-    st.session_state["df"] = df
+            with st.spinner("GPT klassifiziert neue Zwecke..."):
+                for zweck in neue_zwecke:
+                    kat = klassifiziere_verrechenbarkeit(zweck)
+                    neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
 
-    st.success("✅ Mapping mit GPT aktualisiert.")
+            new_df = pd.DataFrame(neue_mapping)
+            mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
+            mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
+            st.session_state["mapping_df"] = mapping_df
+            speichere_mapping(mapping_df)
 
+            df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+            df = df.merge(mapping_df, on="Zweck", how="left")
+            st.session_state["df"] = df
 
-tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
+            st.success("✅ Mapping mit GPT aktualisiert.")
+
+        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
 
         with tab1:
             st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
@@ -129,16 +137,14 @@ tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
                 st.session_state["mapping_df"] = edited_df
                 speichere_mapping(edited_df)
 
-                # Falls df bereits geladen ist: neu mergen
                 if "df" in st.session_state:
                     df = st.session_state["df"]
                     df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
                     df = df.merge(edited_df, on="Zweck", how="left")
                     st.session_state["df"] = df
 
-                st.success("✅ Mapping gespeichert und aktualisiert.")
+                st.success("✅ Mapping gespeichert.")
 
-        # Merge in df sicherstellen
         df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
@@ -148,7 +154,7 @@ elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit pro Mitarbeiter")
 
     if df is None or "Verrechenbarkeit" not in df.columns:
-        st.warning("Bitte zuerst Datei hochladen **und** Zweck-Mapping durchführen.")
+        st.warning("Bitte zuerst Datei hochladen **und** Mapping durchführen.")
     else:
         mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
         selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiterliste)
@@ -180,3 +186,4 @@ elif page == "⬇️ Export":
         st.download_button("⬇️ Excel exportieren", data=output, file_name="zeitdaten_export.xlsx")
     else:
         st.info("Kein Datensatz gefunden.")
+
