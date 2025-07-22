@@ -100,20 +100,29 @@ elif page == "🧠 Zweck-Kategorisierung":
         neue_zwecke = aktuelle_zwecke - bekannte_zwecke
 
         if neue_zwecke:
-            from utils.gpt import klassifiziere_verrechenbarkeit
-            neue_mapping = []
+            st.info(f"🔍 {len(neue_zwecke)} neue Zwecke erkannt, die noch nicht im Mapping enthalten sind.")
 
-            with st.spinner("🔍 GPT klassifiziert neue Zwecke..."):
-                for zweck in neue_zwecke:
-                    kat = klassifiziere_verrechenbarkeit(zweck)
-                    neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
+            if st.button("🤖 Mapping mit KI aktualisieren"):
+                from utils.gpt import klassifiziere_verrechenbarkeit
+                neue_mapping = []
 
-            new_df = pd.DataFrame(neue_mapping)
-            mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
-            mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
-            st.session_state["mapping_df"] = mapping_df
-            speichere_mapping(mapping_df)
-            st.success("✅ Neue Zwecke durch GPT ergänzt.")
+                with st.spinner("GPT klassifiziert neue Zwecke..."):
+                    for zweck in neue_zwecke:
+                        kat = klassifiziere_verrechenbarkeit(zweck)
+                        neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
+
+                new_df = pd.DataFrame(neue_mapping)
+                mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
+                mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
+                st.session_state["mapping_df"] = mapping_df
+                speichere_mapping(mapping_df)
+
+                # auch df aktualisieren
+                df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+                df = df.merge(mapping_df, on="Zweck", how="left")
+                st.session_state["df"] = df
+
+                st.success("✅ Mapping mit GPT aktualisiert.")
 
         tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
 
@@ -183,4 +192,3 @@ elif page == "⬇️ Export":
         st.download_button("⬇️ Excel exportieren", data=output, file_name="zeitdaten_export.xlsx")
     else:
         st.info("Kein Datensatz gefunden.")
-
