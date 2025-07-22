@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import os
 import plotly.express as px
+from io import BytesIO
 
 # 📐 Layout
 st.set_page_config(
@@ -149,7 +150,7 @@ elif page == "🧠 Zweck-Kategorisierung":
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
 
-# 📊 Analyse & Visualisierung
+# 📊 Analyse & Visualisierung – ✅ STUNDENBASIERT
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit pro Mitarbeiter")
 
@@ -173,20 +174,33 @@ elif page == "📊 Analyse & Visualisierung":
         selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiterliste)
 
         df_user = df[df["Mitarbeiter"] == selected]
-        agg = df_user["Verrechenbarkeit"].value_counts(normalize=True) * 100
+
+        # Dauer berechnen
+        if "Dauer" not in df_user.columns:
+            if {"Von", "Bis"}.issubset(df_user.columns):
+                df_user["Von"] = pd.to_datetime(df_user["Von"], errors="coerce")
+                df_user["Bis"] = pd.to_datetime(df_user["Bis"], errors="coerce")
+                df_user["Dauer"] = (df_user["Bis"] - df_user["Von"]).dt.total_seconds() / 3600
+            else:
+                df_user["Dauer"] = 1.0
+
+        # Summieren nach Verrechenbarkeit
+        dauer_summe = df_user.groupby("Verrechenbarkeit")["Dauer"].sum()
+        gesamt = dauer_summe.sum()
+        anteile = (dauer_summe / gesamt * 100).round(1)
 
         st.subheader(f"💼 Aufteilung für: {selected}")
-        st.write(agg.round(2).astype(str) + " %")
+        st.write(anteile.astype(str) + " %")
 
         fig = px.pie(
-            names=agg.index,
-            values=agg.values,
-            title="Anteil Intern vs Extern",
+            names=anteile.index,
+            values=anteile.values,
+            title="Anteil Intern vs Extern (nach Stunden)",
             hole=0.4
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# ⬇️ Export
+# ⬇️ Export – ✅ STUNDENBASIERT
 elif page == "⬇️ Export":
     st.title("⬇️ Datenexport")
 
@@ -196,27 +210,26 @@ elif page == "⬇️ Export":
         if "Verrechenbarkeit" not in export_df.columns:
             export_df = export_df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
 
-        # Dauer berechnen (optional)
         if "Dauer" not in export_df.columns:
             if {"Von", "Bis"}.issubset(export_df.columns):
                 export_df["Von"] = pd.to_datetime(export_df["Von"], errors="coerce")
                 export_df["Bis"] = pd.to_datetime(export_df["Bis"], errors="coerce")
                 export_df["Dauer"] = (export_df["Bis"] - export_df["Von"]).dt.total_seconds() / 3600
             else:
-                export_df["Dauer"] = 1  # Falls keine Zeitspalten vorhanden, zählen als 1h-Einheit
+                export_df["Dauer"] = 1.0
 
-        # Gruppieren
-        gruppiert = export_df.groupby(["Mitarbeiter", "Verrechenbarkeit"])["Dauer"].sum().unstack(fill_value=0)
-        gruppiert["Gesamtstunden"] = gruppiert.sum(axis=1)
-        gruppiert["% Intern"] = (gruppiert.get("Intern", 0) / gruppiert["Gesamtstunden"]) * 100
-        gruppiert["% Extern"] = (gruppiert.get("Extern", 0) / gruppiert["Gesamtstunden"]) * 100
+        export_df = export_df[export_df["Verrechenbarkeit"].isin(["Intern", "Extern"])]
 
-        # Aufbereitung für Export
-        export_summary = gruppiert.reset_index()
-        export_summary = export_summary[["Mitarbeiter", "Intern", "Extern", "% Intern", "% Extern"]]
+        pivot_df = export_df.groupby(["Mitarbeiter", "Verrechenbarkeit"])["Dauer"].sum().unstack(fill_value=0)
+        pivot_df["Gesamtstunden"] = pivot_df.sum(axis=1)
+        pivot_df["% Intern"] = (pivot_df.get("Intern", 0) / pivot_df["Gesamtstunden"]) * 100
+        pivot_df["% Extern"] = (pivot_df.get("Extern", 0) / pivot_df["Gesamtstunden"]) * 100
 
-        # Exportieren
-        from io import BytesIO
+        export_summary = pivot_df.reset_index()
+        export_summary = export_summary[["Mitarbeiter", "Intern", "Extern", "Gesamtstunden", "% Intern", "% Extern"]]
+        export_summary[["Intern", "Extern", "Gesamtstunden"]] = export_summary[["Intern", "Extern", "Gesamtstunden"]].round(2)
+        export_summary[["% Intern", "% Extern"]] = export_summary[["% Intern", "% Extern"]].round(1)
+
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             export_summary.to_excel(writer, index=False, sheet_name="Zusammenfassung")
@@ -228,6 +241,6 @@ elif page == "⬇️ Export":
             file_name="zeitdaten_auswertung.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
     else:
         st.info("❗ Bitte zuerst Daten hochladen und klassifizieren.")
+
