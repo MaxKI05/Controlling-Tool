@@ -88,41 +88,29 @@ elif page == "📁 Daten hochladen":
             st.dataframe(df)
 
 # 🧠 Zweck-Kategorisierung und Mapping
-elif page == "🧠 Zweck-Kategorisierung":
-    st.title("🧠 Zweck-Kategorisierung & Mapping")
+st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
 
-    if df is None or "Zweck" not in df.columns:
-        st.warning("Bitte zuerst eine Excel-Datei hochladen.")
-    else:
-        mapping_df = st.session_state["mapping_df"]
-        bekannte_zwecke = set(mapping_df["Zweck"])
-        aktuelle_zwecke = set(df["Zweck"].dropna())
-        neue_zwecke = aktuelle_zwecke - bekannte_zwecke
+if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
+    from utils.gpt import klassifiziere_verrechenbarkeit
+    neue_mapping = []
 
-        if neue_zwecke:
-            st.info(f"🔍 {len(neue_zwecke)} neue Zwecke erkannt, die noch nicht im Mapping enthalten sind.")
+    with st.spinner("GPT klassifiziert neue Zwecke..."):
+        for zweck in neue_zwecke:
+            kat = klassifiziere_verrechenbarkeit(zweck)
+            neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
 
-            if st.button("🤖 Mapping mit KI aktualisieren"):
-                from utils.gpt import klassifiziere_verrechenbarkeit
-                neue_mapping = []
+    new_df = pd.DataFrame(neue_mapping)
+    mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
+    mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
+    st.session_state["mapping_df"] = mapping_df
+    speichere_mapping(mapping_df)
 
-                with st.spinner("GPT klassifiziert neue Zwecke..."):
-                    for zweck in neue_zwecke:
-                        kat = klassifiziere_verrechenbarkeit(zweck)
-                        neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
+    df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+    df = df.merge(mapping_df, on="Zweck", how="left")
+    st.session_state["df"] = df
 
-                new_df = pd.DataFrame(neue_mapping)
-                mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
-                mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
-                st.session_state["mapping_df"] = mapping_df
-                speichere_mapping(mapping_df)
+    st.success("✅ Mapping mit GPT aktualisiert.")
 
-                # auch df aktualisieren
-                df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-                df = df.merge(mapping_df, on="Zweck", how="left")
-                st.session_state["df"] = df
-
-                st.success("✅ Mapping mit GPT aktualisiert.")
 
         tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
 
