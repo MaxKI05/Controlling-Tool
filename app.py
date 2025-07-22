@@ -8,7 +8,7 @@ from io import BytesIO
 # 📐 Layout
 st.set_page_config(
     page_title="Zeitdatenanalyse Dashboard",
-    page_icon="📊",
+    page_icon="\ud83d\udcca",
     layout="wide"
 )
 
@@ -42,36 +42,36 @@ if "mapping_df" not in st.session_state:
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### 🧭 Navigation")
+    st.markdown("### \ud83e\uddfd Navigation")
     page = st.radio(
         label="Menü",
         options=[
-            "🏠 Start",
-            "📁 Daten hochladen",
-            "🧠 Zweck-Kategorisierung",
-            "📊 Analyse & Visualisierung",
-            "⬇️ Export"
+            "\ud83c\udfe0 Start",
+            "\ud83d\udcc1 Daten hochladen",
+            "\ud83e\udde0 Zweck-Kategorisierung",
+            "\ud83d\udcca Analyse & Visualisierung",
+            "\u2b07\ufe0f Export"
         ],
         label_visibility="collapsed"
     )
     st.markdown("---")
-    st.markdown("👤 Max KI Dashboard – v0.1")
+    st.markdown("\ud83d\udc64 Max KI Dashboard – v0.1")
 
-# 🏠 Startseite
-if page == "🏠 Start":
-    st.title("👋 Willkommen im Zeitdatenanalyse-Dashboard")
+# \ud83c\udfe0 Startseite
+if page == "\ud83c\udfe0 Start":
+    st.title("\ud83d\udc4b Willkommen im Zeitdatenanalyse-Dashboard")
     st.markdown("""
     **Was kann dieses Tool?**
 
-    - 📁 Excel-Zeitdaten hochladen
-    - 🧠 KI-gestützte Klassifizierung (intern/extern)
-    - 📊 Interaktive Diagramme
-    - ⬇️ Export der Ergebnisse
+    - \ud83d\udcc1 Excel-Zeitdaten hochladen
+    - \ud83e\udde0 KI-gestützte Klassifizierung (intern/extern)
+    - \ud83d\udcca Interaktive Diagramme
+    - \u2b07\ufe0f Export der Ergebnisse
     """)
 
-# 📁 Datei hochladen
-elif page == "📁 Daten hochladen":
-    st.title("📁 Excel-Datei hochladen")
+# \ud83d\udcc1 Datei hochladen
+elif page == "\ud83d\udcc1 Daten hochladen":
+    st.title("\ud83d\udcc1 Excel-Datei hochladen")
     uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei hoch", type=["xlsx"])
 
     if uploaded_file:
@@ -81,14 +81,26 @@ elif page == "📁 Daten hochladen":
             st.error("❌ Spalten 'Unterprojekt' oder 'Mitarbeiter' fehlen.")
         else:
             df["Zweck"] = df["Unterprojekt"].apply(extrahiere_zweck)
+
+            dauer_spalte = None
+            for spalte in df.columns:
+                if spalte.lower() in ["stunden", "dauer"]:
+                    dauer_spalte = spalte
+                    break
+
+            if dauer_spalte:
+                df["Dauer"] = pd.to_numeric(df[dauer_spalte], errors="coerce").fillna(0)
+            else:
+                df["Dauer"] = 1.0
+
             st.session_state["df"] = df
             st.success("✅ Datei erfolgreich geladen.")
-            st.subheader("📄 Vorschau der Daten")
+            st.subheader("\ud83d\udcc4 Vorschau der Daten")
             st.dataframe(df)
 
-# 🧠 Zweck-Kategorisierung
-elif page == "🧠 Zweck-Kategorisierung":
-    st.title("🧠 Zweck-Kategorisierung & Mapping")
+# \ud83e\udde0 Zweck-Kategorisierung
+elif page == "\ud83e\udde0 Zweck-Kategorisierung":
+    st.title("\ud83e\udde0 Zweck-Kategorisierung & Mapping")
 
     if df is None or "Zweck" not in df.columns:
         st.warning("Bitte zuerst eine Excel-Datei hochladen.")
@@ -100,7 +112,7 @@ elif page == "🧠 Zweck-Kategorisierung":
 
         st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
 
-        if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
+        if st.button("\ud83e\udd16 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
             from utils.gpt import klassifiziere_verrechenbarkeit
             neue_mapping = []
 
@@ -121,7 +133,7 @@ elif page == "🧠 Zweck-Kategorisierung":
 
             st.success("✅ Mapping mit GPT aktualisiert.")
 
-        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
+        tab1, tab2 = st.tabs(["\ud83d\udccb Aktuelles Mapping", "\u270d\ufe0f Manuell bearbeiten"])
 
         with tab1:
             st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
@@ -134,7 +146,7 @@ elif page == "🧠 Zweck-Kategorisierung":
                 key="mapping_editor"
             )
 
-            if st.button("💾 Änderungen speichern"):
+            if st.button("\ud83d\udcc5 Änderungen speichern"):
                 st.session_state["mapping_df"] = edited_df
                 speichere_mapping(edited_df)
 
@@ -150,46 +162,27 @@ elif page == "🧠 Zweck-Kategorisierung":
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
 
-# 📊 Analyse & Visualisierung – ✅ STUNDENBASIERT
-elif page == "📊 Analyse & Visualisierung":
-    st.title("📊 Verrechenbarkeit pro Mitarbeiter")
+# \ud83d\udcca Analyse & Visualisierung
+elif page == "\ud83d\udcca Analyse & Visualisierung":
+    st.title("\ud83d\udcca Verrechenbarkeit pro Mitarbeiter")
 
     if df is None or "Verrechenbarkeit" not in df.columns:
         st.warning("Bitte zuerst Datei hochladen **und** Mapping durchführen.")
     else:
-        # Zeitraum anzeigen
-        datumsspalten = [col for col in df.columns if col.lower() in ["datum", "von", "bis"]]
-        if datumsspalten:
-            spalte = datumsspalten[0]
-            try:
-                zeitraum_start = pd.to_datetime(df[spalte]).min().strftime("%d.%m.%Y")
-                zeitraum_ende = pd.to_datetime(df[spalte]).max().strftime("%d.%m.%Y")
-                st.markdown(f"🗓️ Zeitraum im Datensatz: **{zeitraum_start} – {zeitraum_ende}**")
-            except:
-                st.info("🗓️ Zeitraum konnte nicht automatisch erkannt werden.")
-        else:
-            st.info("🗓️ Keine Datumsspalte erkannt.")
-
         mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
-        selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiterliste)
+        selected = st.selectbox("\ud83d\udc64 Mitarbeiter auswählen", options=mitarbeiterliste)
 
         df_user = df[df["Mitarbeiter"] == selected]
 
-        # Dauer berechnen
         if "Dauer" not in df_user.columns:
-            if {"Von", "Bis"}.issubset(df_user.columns):
-                df_user["Von"] = pd.to_datetime(df_user["Von"], errors="coerce")
-                df_user["Bis"] = pd.to_datetime(df_user["Bis"], errors="coerce")
-                df_user["Dauer"] = (df_user["Bis"] - df_user["Von"]).dt.total_seconds() / 3600
-            else:
-                df_user["Dauer"] = 1.0
+            st.error("❌ Keine 'Dauer'-Spalte gefunden. Bitte sicherstellen, dass in der Excel eine Stunden-Spalte vorhanden ist.")
+            st.stop()
 
-        # Summieren nach Verrechenbarkeit
         dauer_summe = df_user.groupby("Verrechenbarkeit")["Dauer"].sum()
         gesamt = dauer_summe.sum()
         anteile = (dauer_summe / gesamt * 100).round(1)
 
-        st.subheader(f"💼 Aufteilung für: {selected}")
+        st.subheader(f"\ud83d\udcbc Aufteilung für: {selected}")
         st.write(anteile.astype(str) + " %")
 
         fig = px.pie(
@@ -200,9 +193,9 @@ elif page == "📊 Analyse & Visualisierung":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# ⬇️ Export – ✅ STUNDENBASIERT
-elif page == "⬇️ Export":
-    st.title("⬇️ Datenexport")
+# \u2b07\ufe0f Export
+elif page == "\u2b07\ufe0f Export":
+    st.title("\u2b07\ufe0f Datenexport")
 
     if df is not None:
         export_df = df.copy()
@@ -211,12 +204,8 @@ elif page == "⬇️ Export":
             export_df = export_df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
 
         if "Dauer" not in export_df.columns:
-            if {"Von", "Bis"}.issubset(export_df.columns):
-                export_df["Von"] = pd.to_datetime(export_df["Von"], errors="coerce")
-                export_df["Bis"] = pd.to_datetime(export_df["Bis"], errors="coerce")
-                export_df["Dauer"] = (export_df["Bis"] - export_df["Von"]).dt.total_seconds() / 3600
-            else:
-                export_df["Dauer"] = 1.0
+            st.error("❌ Keine 'Dauer'-Spalte gefunden. Bitte sicherstellen, dass in der Excel eine Stunden-Spalte vorhanden ist.")
+            st.stop()
 
         export_df = export_df[export_df["Verrechenbarkeit"].isin(["Intern", "Extern"])]
 
@@ -236,7 +225,7 @@ elif page == "⬇️ Export":
             export_df.to_excel(writer, index=False, sheet_name="Originaldaten")
 
         st.download_button(
-            "📥 Gesamtauswertung als Excel herunterladen",
+            "\ud83d\udcc5 Gesamtauswertung als Excel herunterladen",
             data=output.getvalue(),
             file_name="zeitdaten_auswertung.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
