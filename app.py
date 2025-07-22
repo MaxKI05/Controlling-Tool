@@ -114,7 +114,7 @@ elif page == "🧠 Zweck-Kategorisierung":
             speichere_mapping(mapping_df)
             st.success("✅ Neue Zwecke ergänzt.")
 
-        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
+                tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
 
         with tab1:
             st.dataframe(mapping_df.sort_values("Zweck"))
@@ -129,11 +129,15 @@ elif page == "🧠 Zweck-Kategorisierung":
             if st.button("💾 Änderungen speichern"):
                 st.session_state["mapping_df"] = edited_df
                 speichere_mapping(edited_df)
-                st.success("Mapping gespeichert.")
 
-        # Merge für weitere Seiten
-        df = df.merge(mapping_df, on="Zweck", how="left")
-        st.session_state["df"] = df
+                # Falls df bereits geladen ist: neu mergen
+                if "df" in st.session_state:
+                    df = st.session_state["df"]
+                    df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+                    df = df.merge(edited_df, on="Zweck", how="left")
+                    st.session_state["df"] = df
+
+                st.success("✅ Mapping gespeichert und aktualisiert.")
 
 # 📊 Visualisierung
 elif page == "📊 Analyse & Visualisierung":
