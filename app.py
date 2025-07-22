@@ -24,8 +24,21 @@ def extrahiere_zweck(text):
         return re.sub(r"^\d+_?", "", zweck_raw)
     return None
 
+# 📁 Mapping laden oder erstellen
+def lade_mapping():
+    if os.path.exists("mapping.csv"):
+        return pd.read_csv("mapping.csv")
+    else:
+        return pd.DataFrame(columns=["Zweck", "Verrechenbarkeit"])
+
+def speichere_mapping(mapping_df):
+    mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
+    mapping_df.to_csv("mapping.csv", index=False)
+
 # 🔄 Globaler DF aus Session
 df = st.session_state.get("df", None)
+if "mapping_df" not in st.session_state:
+    st.session_state["mapping_df"] = lade_mapping()
 
 # Sidebar
 with st.sidebar:
@@ -74,43 +87,60 @@ elif page == "📁 Daten hochladen":
             st.subheader("📄 Hochgeladene Tabelle")
             st.dataframe(df)
 
-# 🧠 GPT-Kategorisierung
+# 🧠 Mapping-Editor & Verwaltung
 elif page == "🧠 Zweck-Kategorisierung":
-    st.title("🧠 GPT-Zweck-Kategorisierung")
+    st.title("🧠 Zweck-Kategorisierung & Mapping")
 
     if df is None or "Zweck" not in df.columns:
         st.warning("Bitte zuerst eine Excel-Datei hochladen.")
     else:
-        st.markdown("GPT entscheidet, ob ein Zweck **intern** oder **extern verrechenbar** ist.")
-        unique_zwecke = df["Zweck"].dropna().unique()
-        unique_zwecke.sort()
+        mapping_df = st.session_state["mapping_df"]
+        bekannte_zwecke = set(mapping_df["Zweck"])
+        aktuelle_zwecke = set(df["Zweck"].dropna())
+        neue_zwecke = aktuelle_zwecke - bekannte_zwecke
 
-        st.write("🎯 Anzahl zu klassifizierender Zwecke:", len(unique_zwecke))
-
-        if st.button("🚀 GPT-Klassifizierung starten"):
+        if neue_zwecke:
             from utils.gpt import klassifiziere_verrechenbarkeit
+            neue_mapping = []
 
-            verrechnungsergebnisse = {}
-            with st.spinner("GPT denkt nach..."):
-                for zweck in unique_zwecke:
-                    kategorie = klassifiziere_verrechenbarkeit(zweck)
-                    verrechnungsergebnisse[zweck] = kategorie
+            with st.spinner("🔍 GPT klassifiziert neue Zwecke..."):
+                for zweck in neue_zwecke:
+                    kat = klassifiziere_verrechenbarkeit(zweck)
+                    neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
 
-            df["Verrechenbarkeit"] = df["Zweck"].map(verrechnungsergebnisse)
-            st.session_state["df"] = df
+            new_df = pd.DataFrame(neue_mapping)
+            mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
+            st.session_state["mapping_df"] = mapping_df
+            speichere_mapping(mapping_df)
+            st.success("✅ Neue Zwecke ergänzt.")
 
-            st.success("✅ Klassifizierung abgeschlossen.")
-            st.dataframe(df[["Zweck", "Verrechenbarkeit"]].drop_duplicates().sort_values("Zweck"))
+        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
 
-            csv = df[["Zweck", "Verrechenbarkeit"]].drop_duplicates().to_csv(index=False).encode("utf-8")
-            st.download_button("⬇️ Klassifizierte Liste herunterladen", data=csv, file_name="verrechenbarkeit.csv")
+        with tab1:
+            st.dataframe(mapping_df.sort_values("Zweck"))
+
+        with tab2:
+            edited_df = st.data_editor(
+                mapping_df,
+                num_rows="dynamic",
+                key="mapping_editor"
+            )
+
+            if st.button("💾 Änderungen speichern"):
+                st.session_state["mapping_df"] = edited_df
+                speichere_mapping(edited_df)
+                st.success("Mapping gespeichert.")
+
+        # Merge für weitere Seiten
+        df = df.merge(mapping_df, on="Zweck", how="left")
+        st.session_state["df"] = df
 
 # 📊 Visualisierung
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit pro Mitarbeiter")
 
     if df is None or "Verrechenbarkeit" not in df.columns:
-        st.warning("Bitte zuerst Datei hochladen **und** GPT-Klassifizierung durchführen.")
+        st.warning("Bitte zuerst Datei hochladen **und** Zweck-Mapping durchführen.")
     else:
         mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
         selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiterliste)
@@ -134,8 +164,13 @@ elif page == "⬇️ Export":
     st.title("⬇️ Datenexport")
 
     if df is not None:
-        output = df.to_excel(index=False, engine="openpyxl")
+        export_df = df.copy()
+        if "Verrechenbarkeit" not in export_df.columns:
+            export_df = export_df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
+
+        output = export_df.to_excel(index=False, engine="openpyxl")
         st.download_button("⬇️ Excel exportieren", data=output, file_name="zeitdaten_export.xlsx")
     else:
         st.info("Kein Datensatz gefunden.")
+
 
