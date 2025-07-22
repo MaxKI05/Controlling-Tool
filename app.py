@@ -87,7 +87,7 @@ elif page == "📁 Daten hochladen":
             st.subheader("📄 Hochgeladene Tabelle")
             st.dataframe(df)
 
-# 🧠 Mapping-Editor & Verwaltung
+# 🧠 Zweck-Kategorisierung und Mapping
 elif page == "🧠 Zweck-Kategorisierung":
     st.title("🧠 Zweck-Kategorisierung & Mapping")
 
@@ -110,19 +110,21 @@ elif page == "🧠 Zweck-Kategorisierung":
 
             new_df = pd.DataFrame(neue_mapping)
             mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
+            mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
             st.session_state["mapping_df"] = mapping_df
             speichere_mapping(mapping_df)
-            st.success("✅ Neue Zwecke ergänzt.")
+            st.success("✅ Neue Zwecke durch GPT ergänzt.")
 
-                tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
+        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
 
         with tab1:
-            st.dataframe(mapping_df.sort_values("Zweck"))
+            st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
 
         with tab2:
             edited_df = st.data_editor(
                 mapping_df,
                 num_rows="dynamic",
+                use_container_width=True,
                 key="mapping_editor"
             )
 
@@ -138,6 +140,11 @@ elif page == "🧠 Zweck-Kategorisierung":
                     st.session_state["df"] = df
 
                 st.success("✅ Mapping gespeichert und aktualisiert.")
+
+        # Merge in df sicherstellen
+        df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+        df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
+        st.session_state["df"] = df
 
 # 📊 Visualisierung
 elif page == "📊 Analyse & Visualisierung":
@@ -176,5 +183,4 @@ elif page == "⬇️ Export":
         st.download_button("⬇️ Excel exportieren", data=output, file_name="zeitdaten_export.xlsx")
     else:
         st.info("Kein Datensatz gefunden.")
-
 
