@@ -192,10 +192,42 @@ elif page == "⬇️ Export":
 
     if df is not None:
         export_df = df.copy()
+
         if "Verrechenbarkeit" not in export_df.columns:
             export_df = export_df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
 
-        output = export_df.to_excel(index=False, engine="openpyxl")
-        st.download_button("⬇️ Excel exportieren", data=output, file_name="zeitdaten_export.xlsx")
+        # Dauer berechnen (optional)
+        if "Dauer" not in export_df.columns:
+            if {"Von", "Bis"}.issubset(export_df.columns):
+                export_df["Von"] = pd.to_datetime(export_df["Von"], errors="coerce")
+                export_df["Bis"] = pd.to_datetime(export_df["Bis"], errors="coerce")
+                export_df["Dauer"] = (export_df["Bis"] - export_df["Von"]).dt.total_seconds() / 3600
+            else:
+                export_df["Dauer"] = 1  # Falls keine Zeitspalten vorhanden, zählen als 1h-Einheit
+
+        # Gruppieren
+        gruppiert = export_df.groupby(["Mitarbeiter", "Verrechenbarkeit"])["Dauer"].sum().unstack(fill_value=0)
+        gruppiert["Gesamtstunden"] = gruppiert.sum(axis=1)
+        gruppiert["% Intern"] = (gruppiert.get("Intern", 0) / gruppiert["Gesamtstunden"]) * 100
+        gruppiert["% Extern"] = (gruppiert.get("Extern", 0) / gruppiert["Gesamtstunden"]) * 100
+
+        # Aufbereitung für Export
+        export_summary = gruppiert.reset_index()
+        export_summary = export_summary[["Mitarbeiter", "Intern", "Extern", "% Intern", "% Extern"]]
+
+        # Exportieren
+        from io import BytesIO
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            export_summary.to_excel(writer, index=False, sheet_name="Zusammenfassung")
+            export_df.to_excel(writer, index=False, sheet_name="Originaldaten")
+
+        st.download_button(
+            "📥 Gesamtauswertung als Excel herunterladen",
+            data=output.getvalue(),
+            file_name="zeitdaten_auswertung.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
     else:
-        st.info("Kein Datensatz gefunden.")
+        st.info("❗ Bitte zuerst Daten hochladen und klassifizieren.")
