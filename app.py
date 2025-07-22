@@ -5,10 +5,10 @@ import os
 import plotly.express as px
 from io import BytesIO
 
-# 📐 Layout
+# 📐 Layout (ohne Emoji im page_icon)
 st.set_page_config(
     page_title="Zeitdatenanalyse Dashboard",
-    page_icon="\U0001F4CA",
+    page_icon=None,
     layout="wide"
 )
 
@@ -42,36 +42,36 @@ if "mapping_df" not in st.session_state:
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### \ud83e\uddfd Navigation")
+    st.markdown("### Navigation")
     page = st.radio(
         label="Menü",
         options=[
-            "\ud83c\udfe0 Start",
-            "\ud83d\udcc1 Daten hochladen",
-            "\ud83e\udde0 Zweck-Kategorisierung",
-            "\ud83d\udcca Analyse & Visualisierung",
-            "\u2b07\ufe0f Export"
+            "Start",
+            "Daten hochladen",
+            "Zweck-Kategorisierung",
+            "Analyse & Visualisierung",
+            "Export"
         ],
         label_visibility="collapsed"
     )
     st.markdown("---")
-    st.markdown("\ud83d\udc64 Max KI Dashboard – v0.1")
+    st.markdown("Max KI Dashboard – v0.1")
 
-# \ud83c\udfe0 Startseite
-if page == "\ud83c\udfe0 Start":
-    st.title("\ud83d\udc4b Willkommen im Zeitdatenanalyse-Dashboard")
+# Startseite
+if page == "Start":
+    st.title("Willkommen im Zeitdatenanalyse-Dashboard")
     st.markdown("""
     **Was kann dieses Tool?**
 
-    - \ud83d\udcc1 Excel-Zeitdaten hochladen
-    - \ud83e\udde0 KI-gestützte Klassifizierung (intern/extern)
-    - \ud83d\udcca Interaktive Diagramme
-    - \u2b07\ufe0f Export der Ergebnisse
+    - Excel-Zeitdaten hochladen
+    - KI-gestützte Klassifizierung (intern/extern)
+    - Interaktive Diagramme
+    - Export der Ergebnisse
     """)
 
-# \ud83d\udcc1 Datei hochladen
-elif page == "\ud83d\udcc1 Daten hochladen":
-    st.title("\ud83d\udcc1 Excel-Datei hochladen")
+# Datei hochladen
+elif page == "Daten hochladen":
+    st.title("Excel-Datei hochladen")
     uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei hoch", type=["xlsx"])
 
     if uploaded_file:
@@ -95,12 +95,12 @@ elif page == "\ud83d\udcc1 Daten hochladen":
 
             st.session_state["df"] = df
             st.success("✅ Datei erfolgreich geladen.")
-            st.subheader("\ud83d\udcc4 Vorschau der Daten")
+            st.subheader("Vorschau der Daten")
             st.dataframe(df)
 
-# \ud83e\udde0 Zweck-Kategorisierung
-elif page == "\ud83e\udde0 Zweck-Kategorisierung":
-    st.title("\ud83e\udde0 Zweck-Kategorisierung & Mapping")
+# Zweck-Kategorisierung
+elif page == "Zweck-Kategorisierung":
+    st.title("Zweck-Kategorisierung & Mapping")
 
     if df is None or "Zweck" not in df.columns:
         st.warning("Bitte zuerst eine Excel-Datei hochladen.")
@@ -110,9 +110,9 @@ elif page == "\ud83e\udde0 Zweck-Kategorisierung":
         aktuelle_zwecke = set(df["Zweck"].dropna())
         neue_zwecke = aktuelle_zwecke - bekannte_zwecke
 
-        st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
+        st.markdown(f"Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
 
-        if st.button("\ud83e\udd16 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
+        if st.button("Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
             from utils.gpt import klassifiziere_verrechenbarkeit
             neue_mapping = []
 
@@ -133,7 +133,7 @@ elif page == "\ud83e\udde0 Zweck-Kategorisierung":
 
             st.success("✅ Mapping mit GPT aktualisiert.")
 
-        tab1, tab2 = st.tabs(["\ud83d\udccb Aktuelles Mapping", "\u270d\ufe0f Manuell bearbeiten"])
+        tab1, tab2 = st.tabs(["Aktuelles Mapping", "Manuell bearbeiten"])
 
         with tab1:
             st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
@@ -146,7 +146,7 @@ elif page == "\ud83e\udde0 Zweck-Kategorisierung":
                 key="mapping_editor"
             )
 
-            if st.button("\ud83d\udcc5 Änderungen speichern"):
+            if st.button("Änderungen speichern"):
                 st.session_state["mapping_df"] = edited_df
                 speichere_mapping(edited_df)
 
@@ -162,15 +162,15 @@ elif page == "\ud83e\udde0 Zweck-Kategorisierung":
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
 
-# \ud83d\udcca Analyse & Visualisierung
-elif page == "\ud83d\udcca Analyse & Visualisierung":
-    st.title("\ud83d\udcca Verrechenbarkeit pro Mitarbeiter")
+# Analyse & Visualisierung
+elif page == "Analyse & Visualisierung":
+    st.title("Verrechenbarkeit pro Mitarbeiter")
 
     if df is None or "Verrechenbarkeit" not in df.columns:
-        st.warning("Bitte zuerst Datei hochladen **und** Mapping durchführen.")
+        st.warning("Bitte zuerst Datei hochladen und Mapping durchführen.")
     else:
         mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
-        selected = st.selectbox("\ud83d\udc64 Mitarbeiter auswählen", options=mitarbeiterliste)
+        selected = st.selectbox("Mitarbeiter auswählen", options=mitarbeiterliste)
 
         df_user = df[df["Mitarbeiter"] == selected]
 
@@ -182,7 +182,7 @@ elif page == "\ud83d\udcca Analyse & Visualisierung":
         gesamt = dauer_summe.sum()
         anteile = (dauer_summe / gesamt * 100).round(1)
 
-        st.subheader(f"\ud83d\udcbc Aufteilung für: {selected}")
+        st.subheader(f"Aufteilung für: {selected}")
         st.write(anteile.astype(str) + " %")
 
         fig = px.pie(
@@ -193,9 +193,9 @@ elif page == "\ud83d\udcca Analyse & Visualisierung":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# \u2b07\ufe0f Export
-elif page == "\u2b07\ufe0f Export":
-    st.title("\u2b07\ufe0f Datenexport")
+# Export
+elif page == "Export":
+    st.title("Datenexport")
 
     if df is not None:
         export_df = df.copy()
@@ -225,11 +225,11 @@ elif page == "\u2b07\ufe0f Export":
             export_df.to_excel(writer, index=False, sheet_name="Originaldaten")
 
         st.download_button(
-            "\ud83d\udcc5 Gesamtauswertung als Excel herunterladen",
+            "Gesamtauswertung als Excel herunterladen",
             data=output.getvalue(),
             file_name="zeitdaten_auswertung.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.info("❗ Bitte zuerst Daten hochladen und klassifizieren.")
+        st.info("Bitte zuerst Daten hochladen und klassifizieren.")
 
