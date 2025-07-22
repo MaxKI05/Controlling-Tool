@@ -8,7 +8,7 @@ from io import BytesIO
 # 📐 Layout
 st.set_page_config(
     page_title="Zeitdatenanalyse Dashboard",
-    page_icon="\ud83d\udcca",
+    page_icon="\U0001F4CA",
     layout="wide"
 )
 
