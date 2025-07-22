@@ -149,27 +149,28 @@ elif page == "🧠 Zweck-Kategorisierung":
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
 
-# 📊 Visualisierung
+# 📊 Analyse & Visualisierung
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit pro Mitarbeiter")
 
     if df is None or "Verrechenbarkeit" not in df.columns:
         st.warning("Bitte zuerst Datei hochladen **und** Mapping durchführen.")
     else:
+        # Zeitraum anzeigen
+        datumsspalten = [col for col in df.columns if col.lower() in ["datum", "von", "bis"]]
+        if datumsspalten:
+            spalte = datumsspalten[0]
+            try:
+                zeitraum_start = pd.to_datetime(df[spalte]).min().strftime("%d.%m.%Y")
+                zeitraum_ende = pd.to_datetime(df[spalte]).max().strftime("%d.%m.%Y")
+                st.markdown(f"🗓️ Zeitraum im Datensatz: **{zeitraum_start} – {zeitraum_ende}**")
+            except:
+                st.info("🗓️ Zeitraum konnte nicht automatisch erkannt werden.")
+        else:
+            st.info("🗓️ Keine Datumsspalte erkannt.")
+
         mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
         selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiterliste)
-    # Versuche Zeitraum zu ermitteln (Datumsspalte)
-    datumsspalten = [col for col in df.columns if col.lower() in ["datum", "von", "bis"]]
-    if datumsspalten:
-        spalte = datumsspalten[0]
-        try:
-        zeitraum_start = pd.to_datetime(df[spalte]).min().strftime("%d.%m.%Y")
-        zeitraum_ende = pd.to_datetime(df[spalte]).max().strftime("%d.%m.%Y")
-        st.markdown(f"🗓️ Zeitraum im Datensatz: **{zeitraum_start} – {zeitraum_ende}**")
-    except:
-        st.info("🗓️ Zeitraum konnte nicht automatisch erkannt werden.")
-else:
-    st.info("🗓️ Keine Datumsspalte erkannt.")
 
         df_user = df[df["Mitarbeiter"] == selected]
         agg = df_user["Verrechenbarkeit"].value_counts(normalize=True) * 100
