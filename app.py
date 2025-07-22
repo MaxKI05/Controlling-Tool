@@ -158,11 +158,11 @@ elif page == "📊 Analyse & Visualisierung":
     else:
         mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
         selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiterliste)
-# Versuche Zeitraum zu ermitteln (Datumsspalte)
-datumsspalten = [col for col in df.columns if col.lower() in ["datum", "von", "bis"]]
-if datumsspalten:
-    spalte = datumsspalten[0]
-    try:
+    # Versuche Zeitraum zu ermitteln (Datumsspalte)
+    datumsspalten = [col for col in df.columns if col.lower() in ["datum", "von", "bis"]]
+    if datumsspalten:
+        spalte = datumsspalten[0]
+        try:
         zeitraum_start = pd.to_datetime(df[spalte]).min().strftime("%d.%m.%Y")
         zeitraum_ende = pd.to_datetime(df[spalte]).max().strftime("%d.%m.%Y")
         st.markdown(f"🗓️ Zeitraum im Datensatz: **{zeitraum_start} – {zeitraum_ende}**")
