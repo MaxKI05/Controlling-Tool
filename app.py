@@ -112,7 +112,7 @@ if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 
     st.success("✅ Mapping mit GPT aktualisiert.")
 
 
-        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
+    tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
 
         with tab1:
             st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
