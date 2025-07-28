@@ -133,9 +133,68 @@ elif page == "📁 Daten hochladen":
             st.subheader("📄 Vorschau der Daten")
             st.dataframe(df)
 
-# 🧠 Zweck-Kategorisierung
 elif page == "🧠 Zweck-Kategorisierung":
-    ...  # bleibt unverändert
+    st.title("🧠 Zweck-Kategorisierung & Mapping")
+
+    if df is None or "Zweck" not in df.columns:
+        st.warning("⚠️ Bitte zuerst eine Excel-Datei hochladen.")
+    else:
+        mapping_df = st.session_state["mapping_df"]
+        bekannte_zwecke = set(mapping_df["Zweck"])
+        aktuelle_zwecke = set(df["Zweck"].dropna())
+        neue_zwecke = aktuelle_zwecke - bekannte_zwecke
+
+        st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
+
+        if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
+            from utils.gpt import klassifiziere_verrechenbarkeit
+            neue_mapping = []
+
+            with st.spinner("🧠 GPT klassifiziert neue Zwecke..."):
+                for zweck in neue_zwecke:
+                    kat = klassifiziere_verrechenbarkeit(zweck)
+                    neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
+
+            new_df = pd.DataFrame(neue_mapping)
+            mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
+            mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
+            st.session_state["mapping_df"] = mapping_df
+            speichere_mapping(mapping_df)
+
+            df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+            df = df.merge(mapping_df, on="Zweck", how="left")
+            st.session_state["df"] = df
+
+            st.success("✅ Mapping mit GPT aktualisiert.")
+
+        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
+
+        with tab1:
+            st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
+
+        with tab2:
+            edited_df = st.data_editor(
+                mapping_df,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="mapping_editor"
+            )
+
+            if st.button("💾 Änderungen speichern"):
+                st.session_state["mapping_df"] = edited_df
+                speichere_mapping(edited_df)
+
+                if "df" in st.session_state:
+                    df = st.session_state["df"]
+                    df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+                    df = df.merge(edited_df, on="Zweck", how="left")
+                    st.session_state["df"] = df
+
+                st.success("✅ Mapping gespeichert.")
+
+        df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+        df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
+        st.session_state["df"] = df
 
 # 📊 Analyse & Visualisierung
 elif page == "📊 Analyse & Visualisierung":
