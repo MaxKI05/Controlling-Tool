@@ -38,28 +38,8 @@ def speichere_mapping(mapping_df):
 
 # 📂 Historie-Verzeichnisse anlegen
 os.makedirs("history/exports", exist_ok=True)
-os.makedirs("history/analysen", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
 
-# 📜 Analysehistorie laden/speichern
-def lade_analysehistorie():
-    path = "history/analysen/analysen.csv"
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    else:
-        return pd.DataFrame(columns=["Mitarbeiter", "Datum", "Intern", "Extern", "% Intern", "% Extern"])
-
-def speichere_analysehistorie(eintrag):
-    path = "history/analysen/analysen.csv"
-    df = lade_analysehistorie()
-    df = pd.concat([df, pd.DataFrame([eintrag])], ignore_index=True)
-    df.to_csv(path, index=False)
-
-def loesche_analyse_eintrag(index):
-    path = "history/analysen/analysen.csv"
-    df = lade_analysehistorie()
-    df = df.drop(index)
-    df.to_csv(path, index=False)
 
 # Session init
 df = st.session_state.get("df", None)
