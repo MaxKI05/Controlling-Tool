@@ -39,6 +39,7 @@ def speichere_mapping(mapping_df):
 # 📂 Historie-Verzeichnisse anlegen
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/analysen", exist_ok=True)
+os.makedirs("history/uploads", exist_ok=True)
 
 # 📜 Analysehistorie laden/speichern
 def lade_analysehistorie():
@@ -52,6 +53,12 @@ def speichere_analysehistorie(eintrag):
     path = "history/analysen/analysen.csv"
     df = lade_analysehistorie()
     df = pd.concat([df, pd.DataFrame([eintrag])], ignore_index=True)
+    df.to_csv(path, index=False)
+
+def loesche_analyse_eintrag(index):
+    path = "history/analysen/analysen.csv"
+    df = lade_analysehistorie()
+    df = df.drop(index)
     df.to_csv(path, index=False)
 
 # Session init
@@ -92,13 +99,22 @@ if page == "🏠 Start":
     st.markdown("## 📤 Export-Historie")
     export_files = sorted(os.listdir("history/exports"), reverse=True)
     for f in export_files:
+        cols = st.columns([8, 1])
         with open(os.path.join("history/exports", f), "rb") as file:
-            st.download_button(label=f"⬇️ {f}", data=file.read(), file_name=f)
+            cols[0].download_button(label=f"⬇️ {f}", data=file.read(), file_name=f)
+        if cols[1].button("❌", key=f"del_{f}"):
+            os.remove(os.path.join("history/exports", f))
+            st.experimental_rerun()
 
     st.markdown("## 📈 Analyse-Historie")
     history_df = lade_analysehistorie()
     if not history_df.empty:
-        st.dataframe(history_df.sort_values("Datum", ascending=False), use_container_width=True)
+        for i, row in history_df.sort_values("Datum", ascending=False).reset_index(drop=True).iterrows():
+            cols = st.columns([10, 1])
+            cols[0].markdown(f"**{row['Datum']}** – {row['Mitarbeiter']} | Intern: {row['Intern']}h, Extern: {row['Extern']}h")
+            if cols[1].button("❌", key=f"del_analyse_{i}"):
+                loesche_analyse_eintrag(i)
+                st.experimental_rerun()
     else:
         st.info("Noch keine gespeicherten Analysen vorhanden.")
 
@@ -108,6 +124,11 @@ elif page == "📁 Daten hochladen":
     uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei hoch", type=["xlsx"])
 
     if uploaded_file:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        save_path = os.path.join("history/uploads", f"upload_{timestamp}.xlsx")
+        with open(save_path, "wb") as f:
+            f.write(uploaded_file.getvalue())
+
         df = load_excel(uploaded_file)
 
         if "Unterprojekt" not in df.columns or "Mitarbeiter" not in df.columns:
@@ -130,6 +151,12 @@ elif page == "📁 Daten hochladen":
             st.success("✅ Datei erfolgreich geladen.")
             st.subheader("📄 Vorschau der Daten")
             st.dataframe(df)
+
+    st.markdown("## 📂 Hochgeladene Dateien")
+    upload_files = sorted(os.listdir("history/uploads"), reverse=True)
+    for f in upload_files:
+        with open(os.path.join("history/uploads", f), "rb") as file:
+            st.download_button(label=f"📄 {f}", data=file.read(), file_name=f)
 elif page == "🧠 Zweck-Kategorisierung":
     st.title("🧠 Zweck-Kategorisierung & Mapping")
 
