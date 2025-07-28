@@ -86,17 +86,6 @@ if page == "🏠 Start":
             os.remove(os.path.join("history/exports", f))
             st.experimental_rerun()
 
-    st.markdown("## 📈 Analyse-Historie")
-    history_df = lade_analysehistorie()
-    if not history_df.empty:
-        for i, row in history_df.sort_values("Datum", ascending=False).reset_index(drop=True).iterrows():
-            cols = st.columns([10, 1])
-            cols[0].markdown(f"**{row['Datum']}** – {row['Mitarbeiter']} | Intern: {row['Intern']}h, Extern: {row['Extern']}h")
-            if cols[1].button("❌", key=f"del_analyse_{i}"):
-                loesche_analyse_eintrag(i)
-                st.experimental_rerun()
-    else:
-        st.info("Noch keine gespeicherten Analysen vorhanden.")
 
 # 📁 Datei hochladen
 elif page == "📁 Daten hochladen":
