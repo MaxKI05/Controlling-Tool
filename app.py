@@ -6,14 +6,10 @@ import plotly.express as px
 from io import BytesIO
 from datetime import datetime
 
-# 📁 Ordner für Historie vorbereiten
-os.makedirs("history/exports", exist_ok=True)
-os.makedirs("history/analysen", exist_ok=True)
-
-# ⚙️ Layout
+# 📐 Layout
 st.set_page_config(
     page_title="Zeitdatenanalyse Dashboard",
-    page_icon="📊",
+    page_icon="🧠",
     layout="wide"
 )
 
@@ -29,7 +25,7 @@ def extrahiere_zweck(text):
         return re.sub(r"^\d+_?", "", zweck_raw)
     return None
 
-# 🗂️ Mapping laden/speichern
+# 📁 Mapping laden/speichern
 def lade_mapping():
     if os.path.exists("mapping.csv"):
         return pd.read_csv("mapping.csv")
@@ -40,24 +36,30 @@ def speichere_mapping(mapping_df):
     mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
     mapping_df.to_csv("mapping.csv", index=False)
 
-# 🔄 Historie laden
-@st.cache_data
-def lade_export_historie():
-    return sorted([f for f in os.listdir("history/exports") if f.endswith(".xlsx")], reverse=True)
+# 📂 Historie-Verzeichnisse anlegen
+os.makedirs("history/exports", exist_ok=True)
+os.makedirs("history/analysen", exist_ok=True)
 
-@st.cache_data
-def lade_analyse_historie():
-    try:
-        return pd.read_csv("history/analysen/analysen.csv")
-    except:
+# 📜 Analysehistorie laden/speichern
+def lade_analysehistorie():
+    path = "history/analysen/analysen.csv"
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    else:
         return pd.DataFrame(columns=["Mitarbeiter", "Datum", "Intern", "Extern", "% Intern", "% Extern"])
 
-# 🧾 Session init
+def speichere_analysehistorie(eintrag):
+    path = "history/analysen/analysen.csv"
+    df = lade_analysehistorie()
+    df = pd.concat([df, pd.DataFrame([eintrag])], ignore_index=True)
+    df.to_csv(path, index=False)
+
+# Session init
 df = st.session_state.get("df", None)
 if "mapping_df" not in st.session_state:
     st.session_state["mapping_df"] = lade_mapping()
 
-# 🧭 Sidebar
+# Sidebar
 with st.sidebar:
     st.markdown("### 🧭 Navigation")
     page = st.radio(
@@ -67,7 +69,7 @@ with st.sidebar:
             "📁 Daten hochladen",
             "🧠 Zweck-Kategorisierung",
             "📊 Analyse & Visualisierung",
-            "⬇️ Export"
+            "📤 Export"
         ],
         label_visibility="collapsed"
     )
@@ -76,31 +78,27 @@ with st.sidebar:
 
 # 🏠 Startseite
 if page == "🏠 Start":
-    st.title("👋 Willkommen im Zeitdatenanalyse-Dashboard")
+    st.title("Willkommen im Zeitdatenanalyse-Dashboard")
     st.markdown("""
     **Was kann dieses Tool?**
 
     - 📁 Excel-Zeitdaten hochladen
-    - 🧠 KI-gestützte Klassifizierung (intern/extern)
+    - 🤖 KI-gestützte Klassifizierung (intern/extern)
     - 📊 Interaktive Diagramme
-    - ⬇️ Export der Ergebnisse
+    - 📤 Export der Ergebnisse
     - 📚 Verlauf vergangener Analysen & Exporte
     """)
 
-    st.subheader("📚 Export-Historie")
-    for file in lade_export_historie():
-        with open(f"history/exports/{file}", "rb") as f:
-            st.download_button(
-                label=f"📤 {file}",
-                data=f,
-                file_name=file,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    st.markdown("## 📤 Export-Historie")
+    export_files = sorted(os.listdir("history/exports"), reverse=True)
+    for f in export_files:
+        with open(os.path.join("history/exports", f), "rb") as file:
+            st.download_button(label=f"⬇️ {f}", data=file.read(), file_name=f)
 
-    st.subheader("📈 Analyse-Historie")
-    analysen_df = lade_analyse_historie()
-    if not analysen_df.empty:
-        st.dataframe(analysen_df.sort_values("Datum", ascending=False), use_container_width=True)
+    st.markdown("## 📈 Analyse-Historie")
+    history_df = lade_analysehistorie()
+    if not history_df.empty:
+        st.dataframe(history_df.sort_values("Datum", ascending=False), use_container_width=True)
     else:
         st.info("Noch keine gespeicherten Analysen vorhanden.")
 
@@ -133,75 +131,12 @@ elif page == "📁 Daten hochladen":
             st.subheader("📄 Vorschau der Daten")
             st.dataframe(df)
 
-elif page == "🧠 Zweck-Kategorisierung":
-    st.title("🧠 Zweck-Kategorisierung & Mapping")
-
-    if df is None or "Zweck" not in df.columns:
-        st.warning("⚠️ Bitte zuerst eine Excel-Datei hochladen.")
-    else:
-        mapping_df = st.session_state["mapping_df"]
-        bekannte_zwecke = set(mapping_df["Zweck"])
-        aktuelle_zwecke = set(df["Zweck"].dropna())
-        neue_zwecke = aktuelle_zwecke - bekannte_zwecke
-
-        st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
-
-        if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
-            from utils.gpt import klassifiziere_verrechenbarkeit
-            neue_mapping = []
-
-            with st.spinner("🧠 GPT klassifiziert neue Zwecke..."):
-                for zweck in neue_zwecke:
-                    kat = klassifiziere_verrechenbarkeit(zweck)
-                    neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
-
-            new_df = pd.DataFrame(neue_mapping)
-            mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
-            mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
-            st.session_state["mapping_df"] = mapping_df
-            speichere_mapping(mapping_df)
-
-            df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-            df = df.merge(mapping_df, on="Zweck", how="left")
-            st.session_state["df"] = df
-
-            st.success("✅ Mapping mit GPT aktualisiert.")
-
-        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
-
-        with tab1:
-            st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
-
-        with tab2:
-            edited_df = st.data_editor(
-                mapping_df,
-                num_rows="dynamic",
-                use_container_width=True,
-                key="mapping_editor"
-            )
-
-            if st.button("💾 Änderungen speichern"):
-                st.session_state["mapping_df"] = edited_df
-                speichere_mapping(edited_df)
-
-                if "df" in st.session_state:
-                    df = st.session_state["df"]
-                    df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-                    df = df.merge(edited_df, on="Zweck", how="left")
-                    st.session_state["df"] = df
-
-                st.success("✅ Mapping gespeichert.")
-
-        df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-        df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
-        st.session_state["df"] = df
-
 # 📊 Analyse & Visualisierung
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit pro Mitarbeiter")
 
     if df is None or "Verrechenbarkeit" not in df.columns:
-        st.warning("⚠️ Bitte zuerst Datei hochladen und Mapping durchführen.")
+        st.warning("Bitte zuerst Datei hochladen **und** Mapping durchführen.")
     else:
         mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
         selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiterliste)
@@ -209,34 +144,15 @@ elif page == "📊 Analyse & Visualisierung":
         df_user = df[df["Mitarbeiter"] == selected]
 
         if "Dauer" not in df_user.columns:
-            st.error("❌ Keine 'Dauer'-Spalte gefunden. Bitte sicherstellen, dass in der Excel eine Stunden-Spalte vorhanden ist.")
+            st.error("❌ Keine 'Dauer'-Spalte gefunden.")
             st.stop()
 
         dauer_summe = df_user.groupby("Verrechenbarkeit")["Dauer"].sum()
         gesamt = dauer_summe.sum()
         anteile = (dauer_summe / gesamt * 100).round(1)
 
-        st.subheader(f"📌 Aufteilung für: {selected}")
+        st.subheader(f"💼 Aufteilung für: {selected}")
         st.write(anteile.astype(str) + " %")
-
-        # 📦 Analyse speichern
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        analyse_row = pd.DataFrame.from_records([{
-            "Mitarbeiter": selected,
-            "Datum": timestamp,
-            "Intern": dauer_summe.get("Intern", 0),
-            "Extern": dauer_summe.get("Extern", 0),
-            "% Intern": anteile.get("Intern", 0),
-            "% Extern": anteile.get("Extern", 0),
-        }])
-
-        if os.path.exists("history/analysen/analysen.csv"):
-            alt = pd.read_csv("history/analysen/analysen.csv")
-            gesamt = pd.concat([alt, analyse_row], ignore_index=True)
-        else:
-            gesamt = analyse_row
-
-        gesamt.to_csv("history/analysen/analysen.csv", index=False)
 
         fig = px.pie(
             names=anteile.index,
@@ -246,9 +162,22 @@ elif page == "📊 Analyse & Visualisierung":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# ⬇️ Export
-elif page == "⬇️ Export":
-    st.title("⬇️ Datenexport")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if st.button("📌 Analyse speichern"):
+            eintrag = {
+                "Mitarbeiter": selected,
+                "Datum": now,
+                "Intern": dauer_summe.get("Intern", 0),
+                "Extern": dauer_summe.get("Extern", 0),
+                "% Intern": anteile.get("Intern", 0),
+                "% Extern": anteile.get("Extern", 0)
+            }
+            speichere_analysehistorie(eintrag)
+            st.success("✅ Analyse gespeichert.")
+
+# 📤 Export
+elif page == "📤 Export":
+    st.title("📤 Datenexport")
 
     if df is not None:
         export_df = df.copy()
@@ -257,7 +186,7 @@ elif page == "⬇️ Export":
             export_df = export_df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
 
         if "Dauer" not in export_df.columns:
-            st.error("❌ Keine 'Dauer'-Spalte gefunden. Bitte sicherstellen, dass in der Excel eine Stunden-Spalte vorhanden ist.")
+            st.error("❌ Keine 'Dauer'-Spalte gefunden.")
             st.stop()
 
         export_df = export_df[export_df["Verrechenbarkeit"].isin(["Intern", "Extern"])]
@@ -273,21 +202,21 @@ elif page == "⬇️ Export":
         export_summary[["% Intern", "% Extern"]] = export_summary[["% Intern", "% Extern"]].round(1)
 
         output = BytesIO()
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"zeitdaten_auswertung_{timestamp}.xlsx"
-
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             export_summary.to_excel(writer, index=False, sheet_name="Zusammenfassung")
             export_df.to_excel(writer, index=False, sheet_name="Originaldaten")
 
-        with open(f"history/exports/{filename}", "wb") as f_out:
-            f_out.write(output.getvalue())
+        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"auswertung_{now}.xlsx"
+        path = os.path.join("history/exports", filename)
+        with open(path, "wb") as f:
+            f.write(output.getvalue())
 
         st.download_button(
-            "📤 Gesamtauswertung als Excel herunterladen",
+            "⬇️ Gesamtauswertung als Excel herunterladen",
             data=output.getvalue(),
             file_name=filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.info("ℹ️ Bitte zuerst Daten hochladen und klassifizieren.")
+        st.info("Bitte zuerst Daten hochladen und klassifizieren.")
