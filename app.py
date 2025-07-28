@@ -83,8 +83,8 @@ if page == "🏠 Start":
         with open(os.path.join("history/exports", f), "rb") as file:
             cols[0].download_button(label=f"⬇️ {f}", data=file.read(), file_name=f)
         if cols[1].button("❌", key=f"del_{f}"):
-        os.remove(os.path.join("history/exports", f))
-        st.rerun()  # <- ersetzt st.experimental_rerun()
+            os.remove(os.path.join("history/exports", f))
+            st.rerun()  # <- ersetzt st.experimental_rerun()
 
 
 # 📁 Datei hochladen
