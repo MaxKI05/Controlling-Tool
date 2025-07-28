@@ -219,18 +219,6 @@ elif page == "📊 Analyse & Visualisierung":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if st.button("📌 Analyse speichern"):
-            eintrag = {
-                "Mitarbeiter": selected,
-                "Datum": now,
-                "Intern": dauer_summe.get("Intern", 0),
-                "Extern": dauer_summe.get("Extern", 0),
-                "% Intern": anteile.get("Intern", 0),
-                "% Extern": anteile.get("Extern", 0)
-            }
-            speichere_analysehistorie(eintrag)
-            st.success("✅ Analyse gespeichert.")
 
 # 📤 Export
 elif page == "📤 Export":
