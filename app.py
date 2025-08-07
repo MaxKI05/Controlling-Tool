@@ -307,7 +307,11 @@ elif page == "💰 Abrechnungs-Vergleich":
         else:
             df_ext = df[df["Verrechenbarkeit"] == "Extern"]
             df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
+        if "Name" not in kuerzel_map.columns:
+            kuerzel_map = kuerzel_map.rename(columns={kuerzel_map.columns[0]: "Name"})
+
             df_ext = df_ext.merge(kuerzel_map, on="Name", how="left")
+
 
             # 🔍 Nur Mappings mit Kürzel
             df_ext = df_ext.dropna(subset=["Kürzel"])
