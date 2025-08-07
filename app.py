@@ -263,9 +263,10 @@ elif page == "💰 Abrechnungs-Vergleich":
 
                 # Abrechnung (Spalte 'Kürzel' + 'Rechnungsstellung SOLL')
                 abrechnung = abrechnung.rename(columns={
-                    "C": "Kürzel",
-                    "F": "Rechnungsstellung SOLL"
+                "PL": "Kürzel",
+                "Rechnungsstellung [€]\nSOLL": "Rechnungsstellung SOLL"
                 })
+
 
                 # Vergleich
                 merged = df_ext.merge(abrechnung, on="Kürzel", how="left")
