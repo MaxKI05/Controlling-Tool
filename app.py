@@ -202,13 +202,18 @@ elif page == "📊 Analyse & Visualisierung":
         export_summary[["% Intern", "% Extern"]] = export_summary[["% Intern", "% Extern"]].round(1)
 
         st.subheader("📊 Balkendiagramm Intern/Extern pro Mitarbeiter")
-        bar_df = export_summary.melt(id_vars="Mitarbeiter", value_vars=["Intern", "Extern"], var_name="Kategorie", value_name="Stunden")
-        fig = px.bar(bar_df, x="Mitarbeiter", y="Stunden", color="Kategorie", barmode="group", title="Stunden nach Verrechenbarkeit")
-        st.plotly_chart(fig, use_container_width=True)
+
+        # Plot mit matplotlib (für PDF-Export kompatibel)
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        export_summary.plot(kind="bar", x="Mitarbeiter", y=["Intern", "Extern"], ax=ax)
+        ax.set_ylabel("Stunden")
+        ax.set_title("Stunden nach Verrechenbarkeit")
+        st.pyplot(fig)
 
         st.subheader("📄 Tabellenansicht")
         st.dataframe(export_summary, use_container_width=True)
-
 elif page == "📤 Export":
     st.title("📤 Datenexport")
 
@@ -234,16 +239,28 @@ elif page == "📤 Export":
         export_summary[["Intern", "Extern", "Gesamtstunden"]] = export_summary[["Intern", "Extern", "Gesamtstunden"]].round(2)
         export_summary[["% Intern", "% Extern"]] = export_summary[["% Intern", "% Extern"]].round(1)
 
-        # Bild speichern
-        fig = px.bar(export_summary.melt(id_vars="Mitarbeiter", value_vars=["Intern", "Extern"], var_name="Kategorie", value_name="Stunden"),
-                     x="Mitarbeiter", y="Stunden", color="Kategorie", barmode="group")
-        image_path = "temp_chart.png"
-        pio.write_image(fig, image_path, format="png")
+        # 🔧 Balkendiagramm mit matplotlib für PDF
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
-        # PDF generieren
+        fig, ax = plt.subplots(figsize=(10, 5))
+        export_summary.plot(kind="bar", x="Mitarbeiter", y=["Intern", "Extern"], ax=ax)
+        ax.set_ylabel("Stunden")
+        ax.set_title("Stunden nach Verrechenbarkeit")
+        fig.tight_layout()
+
+        image_path = "temp_chart.png"
+        fig.savefig(image_path)
+
+        # 📄 PDF mit ReportLab
+        from reportlab.platypus import SimpleDocTemplate, Image as RLImage, Table, TableStyle, Spacer
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+
         pdf_path = f"history/exports/bericht_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
         doc = SimpleDocTemplate(pdf_path, pagesize=A4)
         elements = [RLImage(image_path, width=500, height=300), Spacer(1, 12)]
+
         table_data = [export_summary.columns.tolist()] + export_summary.values.tolist()
         table = Table(table_data)
         table.setStyle(TableStyle([
@@ -263,5 +280,3 @@ elif page == "📤 Export":
             )
     else:
         st.info("Bitte zuerst Daten hochladen und klassifizieren.")
-
-
