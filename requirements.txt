@@ -4,4 +4,4 @@ plotly
 openpyxl
 openai>=1.0.0
 reportlab
-kaleido
+matplotlib
