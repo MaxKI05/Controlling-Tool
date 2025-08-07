@@ -13,6 +13,21 @@ st.set_page_config(
     layout="wide"
 )
 
+# 📥 Excel ladenimport streamlit as st
+import pandas as pd
+import re
+import os
+import plotly.express as px
+from io import BytesIO
+from datetime import datetime
+
+# 📐 Layout
+st.set_page_config(
+    page_title="Zeitdatenanalyse Dashboard",
+    page_icon="🧠",
+    layout="wide"
+)
+
 # 📥 Excel laden
 @st.cache_data
 def load_excel(file):
@@ -39,7 +54,6 @@ def speichere_mapping(mapping_df):
 # 📂 Historie-Verzeichnisse anlegen
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
-
 
 # Session init
 df = st.session_state.get("df", None)
@@ -73,7 +87,7 @@ if page == "🏠 Start":
     - 🤖 KI-gestützte Klassifizierung (intern/extern)
     - 📊 Interaktive Diagramme
     - 📤 Export der Ergebnisse
-    - 📚 Verlauf vergangener Analysen & Exporte
+    - 📚 Verlauf vergangener Exporte
     """)
 
     st.markdown("## 📤 Export-Historie")
@@ -84,8 +98,7 @@ if page == "🏠 Start":
             cols[0].download_button(label=f"⬇️ {f}", data=file.read(), file_name=f)
         if cols[1].button("❌", key=f"del_{f}"):
             os.remove(os.path.join("history/exports", f))
-            st.rerun()  # <- ersetzt st.experimental_rerun()
-
+            st.rerun()
 
 # 📁 Datei hochladen
 elif page == "📁 Daten hochladen":
@@ -188,37 +201,38 @@ elif page == "🧠 Zweck-Kategorisierung":
         df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
-# 📊 Analyse & Visualisierung
-elif page == "📊 Analyse & Visualisierung":
-    st.title("📊 Verrechenbarkeit pro Mitarbeiter")
-
-    if df is None or "Verrechenbarkeit" not in df.columns:
-        st.warning("Bitte zuerst Datei hochladen **und** Mapping durchführen.")
-    else:
-        mitarbeiterliste = df["Mitarbeiter"].dropna().unique()
-        selected = st.selectbox("👤 Mitarbeiter auswählen", options=mitarbeiterliste)
-
-        df_user = df[df["Mitarbeiter"] == selected]
 
         if "Dauer" not in df_user.columns:
             st.error("❌ Keine 'Dauer'-Spalte gefunden.")
             st.stop()
+# 📊 Analyse & Visualisierung
+elif page == "📊 Analyse & Visualisierung":
+    st.title("📊 Verrechenbarkeit Gesamtübersicht")
 
-        dauer_summe = df_user.groupby("Verrechenbarkeit")["Dauer"].sum()
-        gesamt = dauer_summe.sum()
-        anteile = (dauer_summe / gesamt * 100).round(1)
+    if df is None or "Verrechenbarkeit" not in df.columns:
+        st.warning("Bitte zuerst Datei hochladen **und** Mapping durchführen.")
+    else:
+        export_df = df.copy()
+        export_df = export_df[export_df["Verrechenbarkeit"].isin(["Intern", "Extern"])]
 
-        st.subheader(f"💼 Aufteilung für: {selected}")
-        st.write(anteile.astype(str) + " %")
+        pivot_df = export_df.groupby(["Mitarbeiter", "Verrechenbarkeit"])["Dauer"].sum().unstack(fill_value=0)
+        pivot_df["Gesamtstunden"] = pivot_df.sum(axis=1)
+        pivot_df["% Intern"] = (pivot_df.get("Intern", 0) / pivot_df["Gesamtstunden"]) * 100
+        pivot_df["% Extern"] = (pivot_df.get("Extern", 0) / pivot_df["Gesamtstunden"]) * 100
 
-        fig = px.pie(
-            names=anteile.index,
-            values=anteile.values,
-            title="Anteil Intern vs Extern (nach Stunden)",
-            hole=0.4
-        )
+        export_summary = pivot_df.reset_index()
+        export_summary = export_summary[["Mitarbeiter", "Intern", "Extern", "Gesamtstunden", "% Intern", "% Extern"]]
+        export_summary[["Intern", "Extern", "Gesamtstunden"]] = export_summary[["Intern", "Extern", "Gesamtstunden"]].round(2)
+        export_summary[["% Intern", "% Extern"]] = export_summary[["% Intern", "% Extern"]].round(1)
+
+        st.subheader("📊 Balkendiagramm Intern/Extern pro Mitarbeiter")
+        bar_df = export_summary.melt(id_vars="Mitarbeiter", value_vars=["Intern", "Extern"], var_name="Kategorie", value_name="Stunden")
+
+        fig = px.bar(bar_df, x="Mitarbeiter", y="Stunden", color="Kategorie", barmode="group", title="Stunden nach Verrechenbarkeit")
         st.plotly_chart(fig, use_container_width=True)
 
+        st.subheader("📄 Tabellenansicht")
+        st.dataframe(export_summary, use_container_width=True)
 
 # 📤 Export
 elif page == "📤 Export":
@@ -265,3 +279,4 @@ elif page == "📤 Export":
         )
     else:
         st.info("Bitte zuerst Daten hochladen und klassifizieren.")
+
