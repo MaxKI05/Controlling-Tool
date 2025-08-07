@@ -260,15 +260,16 @@ elif page == "🧑‍💼 Mitarbeiter-Mapping":
         if st.button("💾 Kürzel speichern"):
             speichere_kürzel_mapping(st.session_state.kürzel_editor)
             st.success("✅ Kürzel gespeichert.")
-def lade_kürzel_mapping():
-    if os.path.exists("mitarbeiter_kürzel.csv"):
+    def lade_kürzel_mapping():
+        if os.path.exists("mitarbeiter_kürzel.csv"):
         return pd.read_csv("mitarbeiter_kürzel.csv")
-    else:
+        else:
         return pd.DataFrame(columns=["Name", "Kürzel"])
 
-def speichere_kürzel_mapping(df):
-    df.drop_duplicates(subset=["Name"], inplace=True)
-    df.to_csv("mitarbeiter_kürzel.csv", index=False)
+    def speichere_kürzel_mapping(df):
+        df.drop_duplicates(subset=["Name"], inplace=True)
+        df.to_csv("mitarbeiter_kürzel.csv", index=False)
+    
 elif page == "📤 Export":
     st.title("📤 Datenexport")
 
