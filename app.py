@@ -275,86 +275,50 @@ elif page == "📁 Daten hochladen":
     for f in upload_files:
         with open(os.path.join("history/uploads", f), "rb") as file:
             st.download_button(label=f"📄 {f}", data=file.read(), file_name=f)
-elif page == "🧠 Zweck-Kategorisierung":
-    st.title("🧠 Zweck-Kategorisierung & Mapping")
+elif page == "💰 Abrechnungs-Vergleich":
+    st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
-    if df is None or "Zweck" not in df.columns:
-        st.warning("⚠️ Bitte zuerst eine Excel-Datei hochladen.")
-    else:
-        # Verrechenbarkeit-Mapping
-        mapping_df = st.session_state["mapping_df"]
-        bekannte_zwecke = set(mapping_df["Zweck"])
-        aktuelle_zwecke = set(df["Zweck"].dropna())
-        neue_zwecke = aktuelle_zwecke - bekannte_zwecke
+    upload = st.file_uploader("Lade eine Abrechnungs-Excel hoch", type=["xlsx"])
 
-        st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
+    if upload:
+        abrechnung_df = pd.read_excel(upload, sheet_name="Juni 2025", skiprows=8, usecols="C,F")
+        abrechnung_df.columns = ["Kürzel", "Rechnungsstellung_SOLL"]
 
-        if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
-            from utils.gpt import klassifiziere_verrechenbarkeit
-            neue_mapping = []
-            with st.spinner("🧠 GPT klassifiziert neue Zwecke..."):
-                for zweck in neue_zwecke:
-                    kat = klassifiziere_verrechenbarkeit(zweck)
-                    neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
-            new_df = pd.DataFrame(neue_mapping)
-            mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
-            mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
-            st.session_state["mapping_df"] = mapping_df
-            speichere_mapping(mapping_df)
-
-            df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-            df = df.merge(mapping_df, on="Zweck", how="left")
-            st.session_state["df"] = df
-            st.success("✅ Mapping mit GPT aktualisiert.")
-
-        tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
-
-        with tab1:
-            st.dataframe(mapping_df.sort_values("Zweck"), use_container_width=True)
-
-        with tab2:
-            edited_df = st.data_editor(
-                mapping_df,
-                num_rows="dynamic",
-                use_container_width=True,
-                key="mapping_editor"
-            )
-            if st.button("💾 Änderungen speichern"):
-                st.session_state["mapping_df"] = edited_df
-                speichere_mapping(edited_df)
-                if "df" in st.session_state:
-                    df = st.session_state["df"]
-                    df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-                    df = df.merge(edited_df, on="Zweck", how="left")
-                    st.session_state["df"] = df
-                st.success("✅ Mapping gespeichert.")
-
-        df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-        df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
-        st.session_state["df"] = df
-
-        # 👥 Kürzel-Mapping direkt auf dieser Seite
-        st.markdown("---")
-        st.subheader("👥 Mitarbeiter-Kürzel zuordnen")
-
-        if "kuerzel_map" not in st.session_state:
-            alle_namen = sorted(set(df["Mitarbeiter"]))
-            kuerzel_df = pd.DataFrame(alle_namen, columns=["Name"])
-            kuerzel_df["Kürzel"] = ""
-            st.session_state["kuerzel_map"] = kuerzel_df
-
-        edited_kuerzel_df = st.data_editor(
-            st.session_state["kuerzel_map"],
-            key="kuerzel_editor",
-            use_container_width=True,
-            num_rows="dynamic"
+        # 🔄 Währungswerte bereinigen
+        abrechnung_df["Rechnungsstellung_SOLL"] = (
+            abrechnung_df["Rechnungsstellung_SOLL"]
+            .astype(str)
+            .str.replace("€", "", regex=False)
+            .str.replace(".", "", regex=False)
+            .str.replace(",", ".", regex=False)
+            .astype(float)
         )
 
-        if st.button("💾 Kürzel speichern"):
-            st.session_state["kuerzel_map"] = edited_kuerzel_df
-            st.success("✅ Kürzel wurden gespeichert.")
+        # 📊 Summe pro Kürzel
+        abrechnung_grouped = (
+            abrechnung_df.groupby("Kürzel", as_index=False)
+            .agg({"Rechnungsstellung_SOLL": "sum"})
+        )
 
-        st.info("✏️ Trage hier die Kürzel zu den Mitarbeitenden aus der Zeitdaten-Excel ein. Diese werden im Abrechnungs-Vergleich verwendet.")
+        # 🔄 Mapping aus der Zweck-Kategorisierung-Seite laden
+        kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
+        if kuerzel_map.empty or "Kürzel" not in kuerzel_map.columns:
+            st.warning("⚠️ Kein Kürzel-Mapping vorhanden. Bitte in der Zweck-Kategorisierung pflegen.")
+        else:
+            df_ext = df[df["Verrechenbarkeit"] == "Extern"]
+            df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
+            df_ext = df_ext.merge(kuerzel_map, on="Name", how="left")
+
+            # 🔍 Nur Mappings mit Kürzel
+            df_ext = df_ext.dropna(subset=["Kürzel"])
+
+            # 🔄 Verknüpfen
+            merged = df_ext.merge(abrechnung_grouped, on="Kürzel", how="left")
+            merged["Rechnungsstellung_SOLL"] = merged["Rechnungsstellung_SOLL"].fillna(0)
+            merged["Differenz"] = merged["Dauer"] - merged["Rechnungsstellung_SOLL"]
+
+            st.subheader("📊 Vergleichstabelle")
+            st.dataframe(merged, use_container_width=True)
 
 
 elif page == "📤 Export":
