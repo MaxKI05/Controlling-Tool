@@ -54,7 +54,6 @@ with st.sidebar:
     "🧠 Zweck-Kategorisierung",
     "📊 Analyse & Visualisierung",
     "💰 Abrechnungs-Vergleich",
-    "👥 Mitarbeiter-Mapping",
     "📤 Export"
         ],
         label_visibility="collapsed"
@@ -183,6 +182,24 @@ elif page == "🧠 Zweck-Kategorisierung":
 
         df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
+        # 👥 Kürzel-Mapping direkt in der Zweck-Kategorisierung-Seite
+st.markdown("---")
+st.subheader("👥 Mitarbeiter-Kürzel zuordnen")
+
+if "kuerzel_map" not in st.session_state:
+    alle_namen = sorted(set(df["Mitarbeiter"]))
+    st.session_state["kuerzel_map"] = pd.DataFrame(alle_namen, columns=["Name"])
+    st.session_state["kuerzel_map"]["Kürzel"] = ""
+
+st.data_editor(
+    st.session_state["kuerzel_map"],
+    key="kuerzel_editor",
+    use_container_width=True,
+    num_rows="dynamic"
+)
+
+st.info("✏️ Trage hier die Kürzel zu den Mitarbeitenden aus der Zeitdaten-Excel ein. Diese werden später im Abrechnungs-Vergleich verwendet.")
+
         st.session_state["df"] = df
 
 elif page == "📊 Analyse & Visualisierung":
