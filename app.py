@@ -275,73 +275,35 @@ elif page == "📁 Daten hochladen":
     for f in upload_files:
         with open(os.path.join("history/uploads", f), "rb") as file:
             st.download_button(label=f"📄 {f}", data=file.read(), file_name=f)
-
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
-    upload = st.file_uploader("Lade eine Abrechnungs-Excel hoch", type=["xlsx"])
+    upload = st.file_uploader("Lade eine CSV mit Rechnungsdaten hoch", type=["csv"])
 
     if upload:
-        # 🔄 Gesamte Tabelle einlesen, ohne Header
-        df_abrechnung = pd.read_excel(upload, sheet_name=0, header=None)
+        abrechnung_df = pd.read_csv(upload)
 
-        # 🔍 Zeile mit "Rechnungsstellung [€]" suchen
-        zielzeile = None
-        for i, row in df_abrechnung.iterrows():
-            if row.astype(str).str.contains("Rechnungsstellung [€]", case=False).any():
-                zielzeile = i
-                break
-
-        if zielzeile is None:
-            st.warning("⚠️ Keine Zeile mit 'Rechnungsstellung [€]' gefunden.")
+        if not {"Kürzel", "Rechnungsstellung_SOLL"}.issubset(abrechnung_df.columns):
+            st.error("❌ Spalten 'Kürzel' und 'Rechnungsstellung_SOLL' fehlen in der CSV.")
         else:
-            # 📌 Kürzel stehen direkt oberhalb, Werte direkt unterhalb
-            kuerzel_row = df_abrechnung.iloc[zielzeile - 1]
-            werte_row = df_abrechnung.iloc[zielzeile + 1]
-            gueltige_spalten = kuerzel_row[kuerzel_row.notna()].index
-
-            df_clean = pd.DataFrame({
-                "Kürzel": kuerzel_row[gueltige_spalten].values,
-                "Rechnungsstellung_SOLL": werte_row[gueltige_spalten].values
-            })
-
-            # 🔧 Format bereinigen
-            df_clean["Rechnungsstellung_SOLL"] = (
-                df_clean["Rechnungsstellung_SOLL"]
-                .astype(str)
-                .str.replace("€", "", regex=False)
-                .str.replace(".", "", regex=False)
-                .str.replace(",", ".", regex=False)
-                .str.replace("-", "0", regex=False)
-                .astype(float)
-            )
-
-            # 🔁 Gruppieren (für den Fall, dass ein Kürzel mehrfach auftaucht)
-            abrechnung_grouped = df_clean.groupby("Kürzel", as_index=False).sum()
-
-            # 👥 Kürzel-Mapping laden
             kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
             if kuerzel_map.empty or "Kürzel" not in kuerzel_map.columns:
-                st.warning("⚠️ Kein Kürzel-Mapping gefunden. Bitte zuerst in der Zweck-Kategorisierung pflegen.")
+                st.warning("⚠️ Kein Kürzel-Mapping vorhanden.")
             else:
                 if "Name" not in kuerzel_map.columns:
                     kuerzel_map.columns = ["Name", "Kürzel"]
 
-                # 📊 Zeitdaten filtern & summieren
                 df_ext = df[df["Verrechenbarkeit"] == "Extern"]
                 df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
-
-                # 🔗 Mapping anwenden
                 df_ext = df_ext.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
                 df_ext = df_ext.dropna(subset=["Kürzel"])
 
-                merged = df_ext.merge(abrechnung_grouped, on="Kürzel", how="left")
+                merged = df_ext.merge(abrechnung_df, on="Kürzel", how="left")
                 merged["Rechnungsstellung_SOLL"] = merged["Rechnungsstellung_SOLL"].fillna(0)
                 merged["Differenz"] = merged["Dauer"] - merged["Rechnungsstellung_SOLL"]
 
                 st.subheader("📊 Vergleichstabelle")
                 st.dataframe(merged, use_container_width=True)
-
 
 elif page == "📤 Export":
     st.title("📤 Datenexport")
