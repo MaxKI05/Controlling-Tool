@@ -202,9 +202,7 @@ elif page == "🧠 Zweck-Kategorisierung":
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
 
-        if "Dauer" not in df_user.columns:
-            st.error("❌ Keine 'Dauer'-Spalte gefunden.")
-            st.stop()
+    
 # 📊 Analyse & Visualisierung
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit Gesamtübersicht")
