@@ -236,7 +236,6 @@ elif page == "📊 Analyse & Visualisierung":
         st.subheader("📄 Tabellenansicht")
         st.dataframe(export_summary, use_container_width=True)
 
-# 💰 Abrechnungs-Vergleich Seite
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
@@ -244,50 +243,39 @@ elif page == "💰 Abrechnungs-Vergleich":
 
     if upload:
         abrechnung = pd.read_excel(upload)
-        kuerzel_map = lade_kürzel_mapping()
 
-        if kuerzel_map.empty:
-            st.error("❌ Kein Kürzel-Mapping vorhanden. Bitte zuerst im Reiter 'Mitarbeiter-Mapping' anlegen.")
-        else:
-            df_ext = df[df["Verrechenbarkeit"] == "Extern"]
-            df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
-            df_ext = df_ext.merge(kuerzel_map, on="Mitarbeiter", how="left")
-
-            abrechnung = abrechnung.rename(columns={"C": "Kürzel", "F": "Rechnungsstellung SOLL"})
-            merged = df_ext.merge(abrechnung, on="Kürzel", how="left")
-
-            merged["Dauer"] = merged["Dauer"].fillna(0)
-            merged["Rechnungsstellung SOLL"] = merged["Rechnungsstellung SOLL"].fillna(0)
-            merged["Differenz"] = merged["Dauer"] - merged["Rechnungsstellung SOLL"]
-
-            st.subheader("🔍 Vergleichstabelle")
-            st.dataframe(merged, use_container_width=True)
-elif page == "🧑‍💼 Mitarbeiter-Mapping":
-    st.title("🧑‍💼 Kürzel-Mapping für Mitarbeitende")
-
-    if df is None or "Mitarbeiter" not in df.columns:
-        st.warning("Bitte zuerst eine Zeitdaten-Datei hochladen.")
-    else:
-        # Alle eindeutigen Namen aus df holen
-        namen = sorted(set(df["Mitarbeiter"]))
-        neue_mapping = pd.DataFrame(namen, columns=["Name"])
-
-        # Prüfen, ob es im Session State schon Kürzel gibt
         if "kuerzel_map" not in st.session_state:
-            st.session_state["kuerzel_map"] = neue_mapping.copy()
-            st.session_state["kuerzel_map"]["Kürzel"] = ""
+            st.error("❌ Kein Kürzel-Mapping gefunden. Bitte zuerst auf der Seite 'Zweck-Kategorisierung' anlegen.")
+        else:
+            kuerzel_df = st.session_state["kuerzel_map"]
+            # Nur gültige Mappings mit Kürzel
+            kuerzel_df = kuerzel_df[kuerzel_df["Kürzel"].notna() & (kuerzel_df["Kürzel"] != "")]
 
-        # Editor anzeigen
-        st.data_editor(
-            st.session_state["kuerzel_map"],
-            key="mapping_editor",
-            use_container_width=True,
-            num_rows="dynamic"
-        )
+            if kuerzel_df.empty:
+                st.warning("⚠️ Keine gültigen Kürzel-Mappings gefunden.")
+            else:
+                df_ext = df[df["Verrechenbarkeit"] == "Extern"]
+                df_ext = df_ext[df_ext["Mitarbeiter"].isin(kuerzel_df["Name"])]
 
-        st.info("💡 Trage hier manuell die Kürzel zu den Namen aus der Zeitdaten-Excel ein. Die Kürzel werden im Vergleich verwendet.")
+                # Zeitdaten + Kürzel
+                df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
+                df_ext = df_ext.merge(kuerzel_df, left_on="Mitarbeiter", right_on="Name", how="left")
 
-    
+                # Abrechnung (Spalte 'Kürzel' + 'Rechnungsstellung SOLL')
+                abrechnung = abrechnung.rename(columns={
+                    "C": "Kürzel",
+                    "F": "Rechnungsstellung SOLL"
+                })
+
+                # Vergleich
+                merged = df_ext.merge(abrechnung, on="Kürzel", how="left")
+                merged["Dauer"] = merged["Dauer"].fillna(0)
+                merged["Rechnungsstellung SOLL"] = merged["Rechnungsstellung SOLL"].fillna(0)
+                merged["Differenz"] = merged["Dauer"] - merged["Rechnungsstellung SOLL"]
+
+                st.subheader("🔍 Vergleichstabelle (nur gemappte Mitarbeitende)")
+                st.dataframe(merged[["Mitarbeiter", "Kürzel", "Dauer", "Rechnungsstellung SOLL", "Differenz"]], use_container_width=True)
+
 elif page == "📤 Export":
     st.title("📤 Datenexport")
 
