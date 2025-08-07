@@ -127,6 +127,7 @@ elif page == "🧠 Zweck-Kategorisierung":
     if df is None or "Zweck" not in df.columns:
         st.warning("⚠️ Bitte zuerst eine Excel-Datei hochladen.")
     else:
+        # Verrechenbarkeit-Mapping
         mapping_df = st.session_state["mapping_df"]
         bekannte_zwecke = set(mapping_df["Zweck"])
         aktuelle_zwecke = set(df["Zweck"].dropna())
@@ -137,12 +138,10 @@ elif page == "🧠 Zweck-Kategorisierung":
         if st.button("🤖 Mapping mit KI aktualisieren", disabled=(len(neue_zwecke) == 0)):
             from utils.gpt import klassifiziere_verrechenbarkeit
             neue_mapping = []
-
             with st.spinner("🧠 GPT klassifiziert neue Zwecke..."):
                 for zweck in neue_zwecke:
                     kat = klassifiziere_verrechenbarkeit(zweck)
                     neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
-
             new_df = pd.DataFrame(neue_mapping)
             mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
             mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
@@ -152,7 +151,6 @@ elif page == "🧠 Zweck-Kategorisierung":
             df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
             df = df.merge(mapping_df, on="Zweck", how="left")
             st.session_state["df"] = df
-
             st.success("✅ Mapping mit GPT aktualisiert.")
 
         tab1, tab2 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten"])
@@ -167,40 +165,43 @@ elif page == "🧠 Zweck-Kategorisierung":
                 use_container_width=True,
                 key="mapping_editor"
             )
-
             if st.button("💾 Änderungen speichern"):
                 st.session_state["mapping_df"] = edited_df
                 speichere_mapping(edited_df)
-
                 if "df" in st.session_state:
                     df = st.session_state["df"]
                     df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
                     df = df.merge(edited_df, on="Zweck", how="left")
                     st.session_state["df"] = df
-
                 st.success("✅ Mapping gespeichert.")
 
         df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
 
-        # 👥 Kürzel-Mapping direkt in der Zweck-Kategorisierung-Seite
+        # 👥 Kürzel-Mapping direkt auf dieser Seite
         st.markdown("---")
         st.subheader("👥 Mitarbeiter-Kürzel zuordnen")
 
         if "kuerzel_map" not in st.session_state:
             alle_namen = sorted(set(df["Mitarbeiter"]))
-            st.session_state["kuerzel_map"] = pd.DataFrame(alle_namen, columns=["Name"])
-            st.session_state["kuerzel_map"]["Kürzel"] = ""
+            kuerzel_df = pd.DataFrame(alle_namen, columns=["Name"])
+            kuerzel_df["Kürzel"] = ""
+            st.session_state["kuerzel_map"] = kuerzel_df
 
-        st.data_editor(
+        edited_kuerzel_df = st.data_editor(
             st.session_state["kuerzel_map"],
             key="kuerzel_editor",
             use_container_width=True,
             num_rows="dynamic"
         )
 
-        st.info("✏️ Trage hier die Kürzel zu den Mitarbeitenden aus der Zeitdaten-Excel ein. Diese werden später im Abrechnungs-Vergleich verwendet.")
+        if st.button("💾 Kürzel speichern"):
+            st.session_state["kuerzel_map"] = edited_kuerzel_df
+            st.success("✅ Kürzel wurden gespeichert.")
+
+        st.info("✏️ Trage hier die Kürzel zu den Mitarbeitenden aus der Zeitdaten-Excel ein. Diese werden im Abrechnungs-Vergleich verwendet.")
+
 
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit Gesamtübersicht")
