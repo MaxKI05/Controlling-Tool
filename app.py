@@ -184,34 +184,6 @@ elif page == "🧠 Zweck-Kategorisierung":
         df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
-elif page == "👥 Mitarbeiter-Mapping":
-    st.title("👥 Kürzel ↔ Name Zuordnung")
-
-    # Lade Mapping-Datei
-    mapping_path = "mapping/mitarbeiter_mapping.csv"
-    os.makedirs("mapping", exist_ok=True)
-    
-    if os.path.exists(mapping_path):
-        kürzel_df = pd.read_csv(mapping_path)
-    else:
-        kürzel_df = pd.DataFrame(columns=["Kürzel", "Name"])
-
-    # Editierbare Tabelle
-    edited = st.data_editor(
-        kürzel_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="editor_kürzel"
-    )
-
-    if st.button("💾 Mapping speichern"):
-        edited.dropna(subset=["Kürzel", "Name"], inplace=True)
-        edited.drop_duplicates(subset=["Kürzel"], inplace=True)
-        edited.to_csv(mapping_path, index=False)
-        st.success("✅ Mapping gespeichert.")
-
-    st.markdown("---")
-    st.download_button("📄 Aktuelles Mapping herunterladen", data=edited.to_csv(index=False), file_name="mitarbeiter_mapping.csv")
 
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit Gesamtübersicht")
@@ -245,6 +217,85 @@ elif page == "📊 Analyse & Visualisierung":
 
         st.subheader("📄 Tabellenansicht")
         st.dataframe(export_summary, use_container_width=True)
+def lade_kürzel_mapping():
+    if os.path.exists("mitarbeiter_kürzel.csv"):
+        return pd.read_csv("mitarbeiter_kürzel.csv")
+    else:
+        return pd.DataFrame(columns=["Name", "Kürzel"])
+
+def speichere_kürzel_mapping(df):
+    df.drop_duplicates(subset=["Name"], inplace=True)
+    df.to_csv("mitarbeiter_kürzel.csv", index=False)
+
+# 🧑‍💼 Mitarbeiter-Mapping Seite
+elif page == "🧑‍💼 Mitarbeiter-Mapping":
+    st.title("🧑‍💼 Kürzel-Mapping für Mitarbeitende")
+
+    if df is None or "Mitarbeiter" not in df.columns:
+        st.warning("Bitte zuerst eine Zeitdaten-Datei hochladen.")
+    else:
+        bekannte = lade_kürzel_mapping()
+        neue = pd.DataFrame(sorted(set(df["Mitarbeiter"])) , columns=["Name"])
+        mapping_df = pd.merge(neue, bekannte, on="Name", how="left")
+
+        st.data_editor(mapping_df, key="kürzel_editor", use_container_width=True, num_rows="dynamic")
+
+        if st.button("💾 Kürzel speichern"):
+            speichere_kürzel_mapping(st.session_state.kürzel_editor)
+            st.success("✅ Kürzel gespeichert.")
+
+# 💰 Abrechnungs-Vergleich Seite
+elif page == "💰 Abrechnungs-Vergleich":
+    st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
+
+    upload = st.file_uploader("Lade eine Abrechnungs-Excel hoch", type=["xlsx"])
+
+    if upload:
+        abrechnung = pd.read_excel(upload)
+        kuerzel_map = lade_kürzel_mapping()
+
+        if kuerzel_map.empty:
+            st.error("❌ Kein Kürzel-Mapping vorhanden. Bitte zuerst im Reiter 'Mitarbeiter-Mapping' anlegen.")
+        else:
+            df_ext = df[df["Verrechenbarkeit"] == "Extern"]
+            df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
+            df_ext = df_ext.merge(kuerzel_map, on="Mitarbeiter", how="left")
+
+            abrechnung = abrechnung.rename(columns={"C": "Kürzel", "F": "Rechnungsstellung SOLL"})
+            merged = df_ext.merge(abrechnung, on="Kürzel", how="left")
+
+            merged["Dauer"] = merged["Dauer"].fillna(0)
+            merged["Rechnungsstellung SOLL"] = merged["Rechnungsstellung SOLL"].fillna(0)
+            merged["Differenz"] = merged["Dauer"] - merged["Rechnungsstellung SOLL"]
+
+            st.subheader("🔍 Vergleichstabelle")
+            st.dataframe(merged, use_container_width=True)
+
+            # 📤 Export
+            buffer = BytesIO()
+            merged_export = merged[["Mitarbeiter", "Kürzel", "Dauer", "Rechnungsstellung SOLL", "Differenz"]]
+            merged_export.to_excel(buffer, index=False)
+            st.download_button("⬇️ Excel herunterladen", data=buffer.getvalue(), file_name="abrechnungsvergleich.xlsx")
+
+            # 📄 PDF Export
+            pdf_path = f"history/exports/abrechnung_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
+            doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+            styles = getSampleStyleSheet()
+            elements = [Paragraph("Abrechnungsvergleich", styles['Title']), Spacer(1, 12)]
+
+            table_data = [list(merged_export.columns)] + merged_export.values.tolist()
+            table = Table(table_data)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ]))
+            elements.append(table)
+            doc.build(elements)
+
+            with open(pdf_path, "rb") as f:
+                st.download_button("⬇️ PDF herunterladen", data=f.read(), file_name=os.path.basename(pdf_path), mime="application/pdf")
+       
 elif page == "📤 Export":
     st.title("📤 Datenexport")
 
