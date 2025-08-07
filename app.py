@@ -282,36 +282,65 @@ elif page == "💰 Abrechnungs-Vergleich":
     upload = st.file_uploader("Lade eine Abrechnungs-Excel hoch", type=["xlsx"])
 
     if upload:
-        abrechnung = pd.read_excel(upload, sheet_name="Juni 2025", skiprows=8)
+        # 🔄 Gesamte Tabelle einlesen, ohne Header
+        df_abrechnung = pd.read_excel(upload, sheet_name=0, header=None)
 
-        # Spalten korrekt lesen
-        kuerzel = abrechnung.columns[5:]  # alles ab Spalte F (Kürzel-Spalten)
-        euro_zeile = abrechnung[abrechnung.iloc[:, 0].astype(str).str.contains("Rechnungsstellung", na=False)].copy()
+        # 🔍 Zeile mit "Rechnungsstellung [€]" suchen
+        zielzeile = None
+        for i, row in df_abrechnung.iterrows():
+            if row.astype(str).str.contains("Rechnungsstellung [€]", case=False).any():
+                zielzeile = i
+                break
 
-        if euro_zeile.empty:
-            st.warning("⚠️ Keine Rechnungsstellungs-Zeile gefunden.")
-            st.stop()
-
-        euro_werte = euro_zeile.iloc[0][kuerzel].copy()
-
-        # Mapping laden
-        kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame(columns=["Name", "Kürzel"]))
-        kuerzel_map = kuerzel_map[kuerzel_map["Kürzel"].notna() & (kuerzel_map["Kürzel"] != "")]
-
-        if kuerzel_map.empty:
-            st.error("❌ Kein Kürzel-Mapping vorhanden. Bitte zuerst Kürzel im 'Zweck-Kategorisierung'-Tab zuordnen.")
+        if zielzeile is None:
+            st.warning("⚠️ Keine Zeile mit 'Rechnungsstellung [€]' gefunden.")
         else:
-            df_ext = df[df["Verrechenbarkeit"] == "Extern"]
-            df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
-            df_ext = df_ext.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="inner")
+            # 📌 Kürzel stehen direkt oberhalb, Werte direkt unterhalb
+            kuerzel_row = df_abrechnung.iloc[zielzeile - 1]
+            werte_row = df_abrechnung.iloc[zielzeile + 1]
+            gueltige_spalten = kuerzel_row[kuerzel_row.notna()].index
 
-            df_ext["Rechnungsstellung [€] SOLL"] = df_ext["Kürzel"].map(euro_werte)
-            df_ext["Rechnungsstellung [€] SOLL"] = pd.to_numeric(df_ext["Rechnungsstellung [€] SOLL"], errors="coerce").fillna(0)
-            df_ext["Dauer"] = df_ext["Dauer"].round(2)
-            df_ext["Differenz"] = df_ext["Dauer"] - df_ext["Rechnungsstellung [€] SOLL"]
+            df_clean = pd.DataFrame({
+                "Kürzel": kuerzel_row[gueltige_spalten].values,
+                "Rechnungsstellung_SOLL": werte_row[gueltige_spalten].values
+            })
 
-            st.subheader("🔍 Vergleichstabelle")
-            st.dataframe(df_ext[["Mitarbeiter", "Kürzel", "Dauer", "Rechnungsstellung [€] SOLL", "Differenz"]], use_container_width=True)
+            # 🔧 Format bereinigen
+            df_clean["Rechnungsstellung_SOLL"] = (
+                df_clean["Rechnungsstellung_SOLL"]
+                .astype(str)
+                .str.replace("€", "", regex=False)
+                .str.replace(".", "", regex=False)
+                .str.replace(",", ".", regex=False)
+                .str.replace("-", "0", regex=False)
+                .astype(float)
+            )
+
+            # 🔁 Gruppieren (für den Fall, dass ein Kürzel mehrfach auftaucht)
+            abrechnung_grouped = df_clean.groupby("Kürzel", as_index=False).sum()
+
+            # 👥 Kürzel-Mapping laden
+            kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
+            if kuerzel_map.empty or "Kürzel" not in kuerzel_map.columns:
+                st.warning("⚠️ Kein Kürzel-Mapping gefunden. Bitte zuerst in der Zweck-Kategorisierung pflegen.")
+            else:
+                if "Name" not in kuerzel_map.columns:
+                    kuerzel_map.columns = ["Name", "Kürzel"]
+
+                # 📊 Zeitdaten filtern & summieren
+                df_ext = df[df["Verrechenbarkeit"] == "Extern"]
+                df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
+
+                # 🔗 Mapping anwenden
+                df_ext = df_ext.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
+                df_ext = df_ext.dropna(subset=["Kürzel"])
+
+                merged = df_ext.merge(abrechnung_grouped, on="Kürzel", how="left")
+                merged["Rechnungsstellung_SOLL"] = merged["Rechnungsstellung_SOLL"].fillna(0)
+                merged["Differenz"] = merged["Dauer"] - merged["Rechnungsstellung_SOLL"]
+
+                st.subheader("📊 Vergleichstabelle")
+                st.dataframe(merged, use_container_width=True)
 
 
 elif page == "📤 Export":
