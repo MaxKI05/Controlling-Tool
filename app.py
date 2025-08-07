@@ -49,11 +49,13 @@ with st.sidebar:
     page = st.radio(
         label="Menü",
         options=[
-            "🏠 Start",
-            "📁 Daten hochladen",
-            "🧠 Zweck-Kategorisierung",
-            "📊 Analyse & Visualisierung",
-            "📤 Export"
+    "🏠 Start",
+    "📁 Daten hochladen",
+    "🧠 Zweck-Kategorisierung",
+    "📊 Analyse & Visualisierung",
+    "💰 Abrechnungs-Vergleich",
+    "👥 Mitarbeiter-Mapping",
+    "📤 Export"
         ],
         label_visibility="collapsed"
     )
