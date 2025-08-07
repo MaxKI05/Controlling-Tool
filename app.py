@@ -182,6 +182,35 @@ elif page == "🧠 Zweck-Kategorisierung":
         df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
+elif page == "👥 Mitarbeiter-Mapping":
+    st.title("👥 Kürzel ↔ Name Zuordnung")
+
+    # Lade Mapping-Datei
+    mapping_path = "mapping/mitarbeiter_mapping.csv"
+    os.makedirs("mapping", exist_ok=True)
+    
+    if os.path.exists(mapping_path):
+        kürzel_df = pd.read_csv(mapping_path)
+    else:
+        kürzel_df = pd.DataFrame(columns=["Kürzel", "Name"])
+
+    # Editierbare Tabelle
+    edited = st.data_editor(
+        kürzel_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="editor_kürzel"
+    )
+
+    if st.button("💾 Mapping speichern"):
+        edited.dropna(subset=["Kürzel", "Name"], inplace=True)
+        edited.drop_duplicates(subset=["Kürzel"], inplace=True)
+        edited.to_csv(mapping_path, index=False)
+        st.success("✅ Mapping gespeichert.")
+
+    st.markdown("---")
+    st.download_button("📄 Aktuelles Mapping herunterladen", data=edited.to_csv(index=False), file_name="mitarbeiter_mapping.csv")
+
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit Gesamtübersicht")
 
