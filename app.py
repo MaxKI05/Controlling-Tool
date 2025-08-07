@@ -5,6 +5,10 @@ import os
 import plotly.express as px
 from io import BytesIO
 from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Image as RLImage, Table, TableStyle, Spacer
+from reportlab.lib import colors
+import plotly.io as pio
 
 # 📐 Layout
 st.set_page_config(
@@ -13,34 +17,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# 📥 Excel ladenimport streamlit as st
-import pandas as pd
-import re
-import os
-import plotly.express as px
-from io import BytesIO
-from datetime import datetime
-
-# 📐 Layout
-st.set_page_config(
-    page_title="Zeitdatenanalyse Dashboard",
-    page_icon="🧠",
-    layout="wide"
-)
-
-# 📥 Excel laden
 @st.cache_data
 def load_excel(file):
     return pd.read_excel(file)
 
-# 🧠 Zweck extrahieren
 def extrahiere_zweck(text):
     if isinstance(text, str) and "-" in text:
         zweck_raw = text.split("-")[-1].strip()
         return re.sub(r"^\d+_?", "", zweck_raw)
     return None
 
-# 📁 Mapping laden/speichern
 def lade_mapping():
     if os.path.exists("mapping.csv"):
         return pd.read_csv("mapping.csv")
@@ -51,16 +37,13 @@ def speichere_mapping(mapping_df):
     mapping_df.drop_duplicates(subset=["Zweck"], inplace=True)
     mapping_df.to_csv("mapping.csv", index=False)
 
-# 📂 Historie-Verzeichnisse anlegen
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
 
-# Session init
 df = st.session_state.get("df", None)
 if "mapping_df" not in st.session_state:
     st.session_state["mapping_df"] = lade_mapping()
 
-# Sidebar
 with st.sidebar:
     st.markdown("### 🧭 Navigation")
     page = st.radio(
@@ -77,7 +60,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("🧠 Max KI Dashboard – v0.1")
 
-# 🏠 Startseite
 if page == "🏠 Start":
     st.title("Willkommen im Zeitdatenanalyse-Dashboard")
     st.markdown("""
@@ -100,7 +82,6 @@ if page == "🏠 Start":
             os.remove(os.path.join("history/exports", f))
             st.rerun()
 
-# 📁 Datei hochladen
 elif page == "📁 Daten hochladen":
     st.title("📁 Excel-Datei hochladen")
     uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei hoch", type=["xlsx"])
@@ -201,9 +182,6 @@ elif page == "🧠 Zweck-Kategorisierung":
         df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
         df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
         st.session_state["df"] = df
-
-    
-# 📊 Analyse & Visualisierung
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit Gesamtübersicht")
 
@@ -225,14 +203,12 @@ elif page == "📊 Analyse & Visualisierung":
 
         st.subheader("📊 Balkendiagramm Intern/Extern pro Mitarbeiter")
         bar_df = export_summary.melt(id_vars="Mitarbeiter", value_vars=["Intern", "Extern"], var_name="Kategorie", value_name="Stunden")
-
         fig = px.bar(bar_df, x="Mitarbeiter", y="Stunden", color="Kategorie", barmode="group", title="Stunden nach Verrechenbarkeit")
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("📄 Tabellenansicht")
         st.dataframe(export_summary, use_container_width=True)
 
-# 📤 Export
 elif page == "📤 Export":
     st.title("📤 Datenexport")
 
@@ -258,23 +234,34 @@ elif page == "📤 Export":
         export_summary[["Intern", "Extern", "Gesamtstunden"]] = export_summary[["Intern", "Extern", "Gesamtstunden"]].round(2)
         export_summary[["% Intern", "% Extern"]] = export_summary[["% Intern", "% Extern"]].round(1)
 
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            export_summary.to_excel(writer, index=False, sheet_name="Zusammenfassung")
-            export_df.to_excel(writer, index=False, sheet_name="Originaldaten")
+        # Bild speichern
+        fig = px.bar(export_summary.melt(id_vars="Mitarbeiter", value_vars=["Intern", "Extern"], var_name="Kategorie", value_name="Stunden"),
+                     x="Mitarbeiter", y="Stunden", color="Kategorie", barmode="group")
+        image_path = "temp_chart.png"
+        pio.write_image(fig, image_path, format="png")
 
-        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"auswertung_{now}.xlsx"
-        path = os.path.join("history/exports", filename)
-        with open(path, "wb") as f:
-            f.write(output.getvalue())
+        # PDF generieren
+        pdf_path = f"history/exports/bericht_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
+        doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+        elements = [RLImage(image_path, width=500, height=300), Spacer(1, 12)]
+        table_data = [export_summary.columns.tolist()] + export_summary.values.tolist()
+        table = Table(table_data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ]))
+        elements.append(table)
+        doc.build(elements)
 
-        st.download_button(
-            "⬇️ Gesamtauswertung als Excel herunterladen",
-            data=output.getvalue(),
-            file_name=filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        with open(pdf_path, "rb") as f:
+            st.download_button(
+                "⬇️ PDF-Bericht herunterladen",
+                data=f.read(),
+                file_name=os.path.basename(pdf_path),
+                mime="application/pdf"
+            )
     else:
         st.info("Bitte zuerst Daten hochladen und klassifizieren.")
+
 
