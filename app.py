@@ -58,7 +58,7 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     st.markdown("---")
-    st.markdown("🧠 Max KI Dashboard – v0.1")
+    st.markdown("🧠 Max KI Dashboard – v1.1.0")
 
 if page == "🏠 Start":
     st.title("Willkommen im Zeitdatenanalyse-Dashboard")
