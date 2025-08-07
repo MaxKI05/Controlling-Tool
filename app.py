@@ -244,31 +244,31 @@ elif page == "💰 Abrechnungs-Vergleich":
 
             st.subheader("🔍 Vergleichstabelle")
             st.dataframe(merged, use_container_width=True)
-
 elif page == "🧑‍💼 Mitarbeiter-Mapping":
     st.title("🧑‍💼 Kürzel-Mapping für Mitarbeitende")
 
     if df is None or "Mitarbeiter" not in df.columns:
         st.warning("Bitte zuerst eine Zeitdaten-Datei hochladen.")
     else:
-        bekannte = lade_kürzel_mapping()
-        neue = pd.DataFrame(sorted(set(df["Mitarbeiter"])) , columns=["Name"])
-        mapping_df = pd.merge(neue, bekannte, on="Name", how="left")
+        # Alle eindeutigen Namen aus df holen
+        namen = sorted(set(df["Mitarbeiter"]))
+        neue_mapping = pd.DataFrame(namen, columns=["Name"])
 
-        st.data_editor(mapping_df, key="kürzel_editor", use_container_width=True, num_rows="dynamic")
+        # Prüfen, ob es im Session State schon Kürzel gibt
+        if "kuerzel_map" not in st.session_state:
+            st.session_state["kuerzel_map"] = neue_mapping.copy()
+            st.session_state["kuerzel_map"]["Kürzel"] = ""
 
-        if st.button("💾 Kürzel speichern"):
-            speichere_kürzel_mapping(st.session_state.kürzel_editor)
-            st.success("✅ Kürzel gespeichert.")
-    def lade_kürzel_mapping():
-        if os.path.exists("mitarbeiter_kürzel.csv"):
-            return pd.read_csv("mitarbeiter_kürzel.csv")
-        else:
-            return pd.DataFrame(columns=["Name", "Kürzel"])
+        # Editor anzeigen
+        st.data_editor(
+            st.session_state["kuerzel_map"],
+            key="mapping_editor",
+            use_container_width=True,
+            num_rows="dynamic"
+        )
 
-    def speichere_kürzel_mapping(df):
-        df.drop_duplicates(subset=["Name"], inplace=True)
-        df.to_csv("mitarbeiter_kürzel.csv", index=False)
+        st.info("💡 Trage hier manuell die Kürzel zu den Namen aus der Zeitdaten-Excel ein. Die Kürzel werden im Vergleich verwendet.")
+
     
 elif page == "📤 Export":
     st.title("📤 Datenexport")
