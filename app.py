@@ -262,9 +262,9 @@ elif page == "🧑‍💼 Mitarbeiter-Mapping":
             st.success("✅ Kürzel gespeichert.")
     def lade_kürzel_mapping():
         if os.path.exists("mitarbeiter_kürzel.csv"):
-        return pd.read_csv("mitarbeiter_kürzel.csv")
+            return pd.read_csv("mitarbeiter_kürzel.csv")
         else:
-        return pd.DataFrame(columns=["Name", "Kürzel"])
+            return pd.DataFrame(columns=["Name", "Kürzel"])
 
     def speichere_kürzel_mapping(df):
         df.drop_duplicates(subset=["Name"], inplace=True)
