@@ -286,7 +286,7 @@ elif page == "💰 Abrechnungs-Vergleich":
 
         zielzeile = None
         for i, row in df_abrechnung.iterrows():
-            if row.astype(str).str.contains("Rechnungsstellung [€]", case=False).any():
+            if row.astype(str).str.contains(r"Rechnungsstellung.*(€|EUR)", case=False, regex=True).any():
                 zielzeile = i
                 break
 
