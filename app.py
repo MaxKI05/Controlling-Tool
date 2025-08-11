@@ -1,4 +1,3 @@
-# app.py
 import os
 import re
 from datetime import datetime
@@ -14,13 +13,13 @@ from reportlab.platypus import Image as RLImage, SimpleDocTemplate, Spacer, Tabl
 # Layout & App-Setup
 # ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Zeitdatenanalyse Dashboard", page_icon="🧠", layout="wide")
-APP_VERSION = "v0.0.5"
+APP_VERSION = "v0.0.6"
 
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Helper
+# Helper-Funktionen
 # ──────────────────────────────────────────────────────────────────────────────
 @st.cache_data
 def load_excel(file):
@@ -91,7 +90,7 @@ if "kuerzel_map" not in st.session_state:
     st.session_state["kuerzel_map"] = lade_kuerzel()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Sidebar
+# Sidebar Navigation
 # ──────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🧭 Navigation")
@@ -111,9 +110,35 @@ with st.sidebar:
     st.markdown(f"🧠 Max KI Dashboard – {APP_VERSION}")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 📁 Daten hochladen – jetzt mit automatischem Kürzel-Import
+# STARTSEITE
 # ──────────────────────────────────────────────────────────────────────────────
-    
+if page == "🏠 Start":
+    st.title("Willkommen im Zeitdatenanalyse-Dashboard")
+    st.markdown(
+        """
+**Was kann dieses Tool?**
+
+- 📁 Excel-Zeitdaten hochladen
+- 🤖 Klassifizierung (Intern/Extern) per Button
+- 📊 Interaktive Diagramme
+- 📤 Export der Ergebnisse
+- 📚 Verlauf vergangener Exporte
+"""
+    )
+
+    st.markdown("## 📤 Export-Historie")
+    export_files = sorted(os.listdir("history/exports"), reverse=True)
+    for f in export_files:
+        cols = st.columns([8, 1])
+        with open(os.path.join("history/exports", f), "rb") as file:
+            cols[0].download_button(label=f"⬇️ {f}", data=file.read(), file_name=f)
+        if cols[1].button("❌", key=f"del_{f}"):
+            os.remove(os.path.join("history/exports", f))
+            st.rerun()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DATEN HOCHLADEN – mit automatischem Kürzelimport
+# ──────────────────────────────────────────────────────────────────────────────
 elif page == "📁 Daten hochladen":
     st.title("📁 Excel-Datei hochladen")
     uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei hoch", type=["xlsx"])
@@ -143,7 +168,7 @@ elif page == "📁 Daten hochladen":
 
             st.session_state["df"] = df
 
-            # ➕ NEU: Mitarbeitende automatisch in kuerzel.csv aufnehmen
+            # ➕ Automatischer Import neuer Mitarbeitenden in kuerzel.csv
             try:
                 kuerzel_df = get_state_df("kuerzel_map", lade_kuerzel)
                 aktuelle_namen = set(df["Mitarbeiter"].dropna().astype(str).str.strip())
@@ -171,16 +196,27 @@ elif page == "📁 Daten hochladen":
             st.download_button(label=f"📄 {f}", data=file.read(), file_name=f)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 🧠 Zweck-Kategorisierung – Kürzel-Editor ohne Anonymisierung
+# ZWECK-KATEGORISIERUNG – inkl. Kürzelpflege
 # ──────────────────────────────────────────────────────────────────────────────
 elif page == "🧠 Zweck-Kategorisierung":
     st.title("🧠 Zweck-Kategorisierung & Mapping")
     mapping_df = get_state_df("mapping_df", lade_mapping)
     kuerzel_df = get_state_df("kuerzel_map", lade_kuerzel)
 
-    # Zweck-Mapping (unverändert)
-    # ...
+    # Zweck-Mapping
+    st.subheader("📋 Aktuelles Zweck-Mapping (persistiert)")
+    edited_mapping = st.data_editor(
+        mapping_df.sort_values("Zweck"),
+        num_rows="dynamic",
+        use_container_width=True,
+        key="mapping_editor",
+    )
+    if st.button("💾 Mapping speichern"):
+        st.session_state["mapping_df"] = edited_mapping.copy()
+        speichere_mapping(st.session_state["mapping_df"])
+        st.success("✅ Mapping gespeichert.")
 
+    # Kürzel-Mapping
     st.markdown("---")
     st.subheader("👥 Mitarbeiter-Kürzel (persistiert)")
     edited_kuerzel = st.data_editor(
@@ -193,9 +229,7 @@ elif page == "🧠 Zweck-Kategorisierung":
             "Kürzel": st.column_config.TextColumn("Kürzel"),
         },
     )
-
-    k1, k2 = st.columns([1, 1])
-    if k1.button("💾 Kürzel speichern"):
+    if st.button("💾 Kürzel speichern"):
         updated = edited_kuerzel[["Name", "Kürzel"]].copy()
         base = get_state_df("kuerzel_map", lade_kuerzel).copy()
         base = base.drop(columns=["Kürzel"], errors="ignore").merge(updated, on="Name", how="left")
@@ -203,24 +237,6 @@ elif page == "🧠 Zweck-Kategorisierung":
         st.session_state["kuerzel_map"] = base.drop_duplicates(subset=["Name"])
         speichere_kuerzel(st.session_state["kuerzel_map"])
         st.success("✅ Kürzel gespeichert.")
-
-    has_df = isinstance(st.session_state.get("df"), pd.DataFrame)
-    if k2.button("➕ Neue Mitarbeitende aus aktuellem Datensatz", disabled=not has_df):
-        df_now = st.session_state["df"]
-        if "Mitarbeiter" in df_now.columns:
-            aktuelle = set(df_now["Mitarbeiter"].dropna().astype(str).str.strip())
-            bekannte = set(st.session_state["kuerzel_map"]["Name"].astype(str).str.strip())
-            neu = sorted(list(aktuelle - bekannte))
-            if neu:
-                addon = pd.DataFrame({"Name": neu, "Kürzel": ""})
-                st.session_state["kuerzel_map"] = (
-                    pd.concat([st.session_state["kuerzel_map"], addon], ignore_index=True)
-                      .drop_duplicates(subset=["Name"])
-                )
-                speichere_kuerzel(st.session_state["kuerzel_map"])
-                st.success(f"➕ {len(neu)} neue Mitarbeitende hinzugefügt.")
-            else:
-                st.info("Keine neuen Namen gefunden.")
 
 
 elif page == "📊 Analyse & Visualisierung":
