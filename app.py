@@ -302,31 +302,39 @@ elif page == "💰 Abrechnungs-Vergleich":
     df_abrechnung = df_abrechnung.dropna(how="all", axis=0)
 
     # 4) Spaltenauswahl – du bestimmst, welche Spalte was ist
-    st.subheader("🧾 Spaltenzuordnung")
+# Spaltenliste einmal bauen
+cols = list(df_abrechnung.columns)
 
-    # kleine Heuristik für Vorauswahl
-    def pick_col(cands, default=None):
-        for c in df_abrechnung.columns:
-            n = str(c).lower()
-            if any(k in n for k in cands):
-                return c
-        return default if default in df_abrechnung.columns else df_abrechnung.columns[0]
+# Helper: sicheren Index holen
+def idx_or_zero(seq, val):
+    try:
+        return seq.index(val)
+    except Exception:
+        return 0
 
-    col_kuerzel_auto = pick_col(("kürzel", "kuerzel", "initial", "zeichen", "pl", "ks"))
-    col_tage_auto    = pick_col(("einsatztage", "tage", "soll"))
-    col_euro_auto    = pick_col(("rechnung", "betrag", "€", "eur"))
+# Auto-Erkennung absichern
+col_kuerzel_auto = col_kuerzel_auto if col_kuerzel_auto in cols else cols[0]
+col_tage_auto    = col_tage_auto if col_tage_auto in cols else cols[0]
+col_euro_auto    = col_euro_auto if col_euro_auto in cols else None
 
-    c1, c2, c3 = st.columns(3)
-    col_kuerzel = c1.selectbox("Spalte: Kürzel", list(df_abrechnung.columns),
-                               index=list(df_abrechnung.columns).get_loc(col_kuerzel_auto))
-    col_tage_soll = c2.selectbox("Spalte: Einsatztage SOLL", list(df_abrechnung.columns),
-                                 index=list(df_abrechnung.columns).get_loc(col_tage_auto))
-    euro_options = [None] + list(df_abrechnung.columns)
-    euro_index = 0
-    if col_euro_auto in df_abrechnung.columns:
-        euro_index = euro_options.index(col_euro_auto)
-    col_betrag_soll = c3.selectbox("Spalte: Rechnungsstellung SOLL (€) (optional)",
-                                   euro_options, index=euro_index)
+c1, c2, c3 = st.columns(3)
+col_kuerzel = c1.selectbox(
+    "Spalte: Kürzel",
+    options=cols,
+    index=idx_or_zero(cols, col_kuerzel_auto),
+)
+col_tage_soll = c2.selectbox(
+    "Spalte: Einsatztage SOLL",
+    options=cols,
+    index=idx_or_zero(cols, col_tage_auto),
+)
+euro_options = [None] + cols
+col_betrag_soll = c3.selectbox(
+    "Spalte: Rechnungsstellung SOLL (€) (optional)",
+    options=euro_options,
+    index=idx_or_zero(euro_options, col_euro_auto),
+)
+
 
     # 5) Abrechnung auf die benötigten Spalten reduzieren & Zahlen cleanen
     abr_cols = [col_kuerzel, col_tage_soll] + ([col_betrag_soll] if col_betrag_soll else [])
