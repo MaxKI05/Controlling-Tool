@@ -3,19 +3,18 @@ import os
 import time
 from openai import OpenAI
 
-# --- API-Key laden: zuerst ENV, fallback auf st.secrets (wenn vorhanden) ---
+# API-Key: zuerst ENV, optional Streamlit-Secrets als Fallback
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     try:
-        import streamlit as st  # optional
+        import streamlit as st
         api_key = st.secrets.get("OPENAI_API_KEY")
     except Exception:
         api_key = None
 
 if not api_key:
     raise RuntimeError(
-        "Kein OpenAI-API-Key gefunden. Setze OPENAI_API_KEY als Umgebungsvariable "
-        "oder lege ihn in st.secrets['OPENAI_API_KEY'] ab."
+        "Kein OpenAI-API-Key gefunden. Setze OPENAI_API_KEY oder st.secrets['OPENAI_API_KEY']."
     )
 
 client = OpenAI(api_key=api_key)
@@ -24,7 +23,7 @@ SYSTEM_MSG = "Du bist ein Klassifizierungs-Experte für Zeitdaten."
 
 def klassifiziere_verrechenbarkeit(zweck: str) -> str:
     """
-    Gibt 'Intern' oder 'Extern' zurück. Hebt Fehler nach Retries an den Aufrufer weiter.
+    Gibt 'Intern' oder 'Extern' zurück. Fehler werden nach wenigen Retries hochgereicht.
     """
     prompt = f"""
 Der folgende Zweck stammt aus einer Zeitbuchung eines Ingenieurbüros für Nachhaltigkeitsberatung.
@@ -41,10 +40,10 @@ Antworte nur mit: Intern oder Extern.
 """.strip()
 
     last_err = None
-    for attempt in range(3):  # kleiner Retry bei Netz/Ratelimit
+    for attempt in range(3):
         try:
             r = client.chat.completions.create(
-                model="gpt-4o-mini",  # ggf. auf "gpt-4o" oder dein Wunschmodell ändern
+                model="gpt-4o-mini",  # ggf. auf "gpt-4o" umstellen
                 temperature=0,
                 messages=[
                     {"role": "system", "content": SYSTEM_MSG},
@@ -63,8 +62,6 @@ Antworte nur mit: Intern oder Extern.
 
     raise RuntimeError(f"GPT-Klassifizierung fehlgeschlagen: {last_err}")
 
-
-# Optionaler Schnelltest: `python -m utils.gpt "zweck-text"`
 if __name__ == "__main__":
     import sys
     text = " ".join(sys.argv[1:]) or "DGNB Nachweis"
