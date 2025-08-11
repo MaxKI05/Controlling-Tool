@@ -237,45 +237,6 @@ elif page == "📊 Analyse & Visualisierung":
         st.dataframe(export_summary, use_container_width=True)
 
 
-elif page == "📁 Daten hochladen":
-    st.title("📁 Excel-Datei hochladen")
-    uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei hoch", type=["xlsx"])
-
-    if uploaded_file:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        save_path = os.path.join("history/uploads", f"upload_{timestamp}.xlsx")
-        with open(save_path, "wb") as f:
-            f.write(uploaded_file.getvalue())
-
-        df = load_excel(uploaded_file)
-
-        if "Unterprojekt" not in df.columns or "Mitarbeiter" not in df.columns:
-            st.error("❌ Spalten 'Unterprojekt' oder 'Mitarbeiter' fehlen.")
-        else:
-            df["Zweck"] = df["Unterprojekt"].apply(extrahiere_zweck)
-
-            dauer_spalte = None
-            for spalte in df.columns:
-                if spalte.lower() in ["stunden", "dauer"]:
-                    dauer_spalte = spalte
-                    break
-
-            if dauer_spalte:
-                df["Dauer"] = pd.to_numeric(df[dauer_spalte], errors="coerce").fillna(0)
-            else:
-                df["Dauer"] = 1.0
-
-            st.session_state["df"] = df
-            st.success("✅ Datei erfolgreich geladen.")
-            st.subheader("📄 Vorschau der Daten")
-            st.dataframe(df)
-
-    st.markdown("## 📂 Hochgeladene Dateien")
-    upload_files = sorted(os.listdir("history/uploads"), reverse=True)
-    for f in upload_files:
-        with open(os.path.join("history/uploads", f), "rb") as file:
-            st.download_button(label=f"📄 {f}", data=file.read(), file_name=f)
-
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
