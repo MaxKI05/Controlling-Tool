@@ -275,6 +275,7 @@ elif page == "📊 Analyse & Visualisierung":
 
             st.subheader("📄 Tabellenansicht")
             st.dataframe(export_summary, use_container_width=True)
+
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
@@ -302,39 +303,52 @@ elif page == "💰 Abrechnungs-Vergleich":
     df_abrechnung = df_abrechnung.dropna(how="all", axis=0)
 
     # 4) Spaltenauswahl – du bestimmst, welche Spalte was ist
-# Spaltenliste einmal bauen
-cols = list(df_abrechnung.columns)
+    st.subheader("🧾 Spaltenzuordnung")
 
-# Helper: sicheren Index holen
-def idx_or_zero(seq, val):
-    try:
-        return seq.index(val)
-    except Exception:
-        return 0
+    # kleine Heuristik für Vorauswahl
+    def pick_col(cands, default=None):
+        for c in df_abrechnung.columns:
+            n = str(c).lower()
+            if any(k in n for k in cands):
+                return c
+        return default if (default in df_abrechnung.columns) else (df_abrechnung.columns[0])
 
-# Auto-Erkennung absichern
-col_kuerzel_auto = col_kuerzel_auto if col_kuerzel_auto in cols else cols[0]
-col_tage_auto    = col_tage_auto if col_tage_auto in cols else cols[0]
-col_euro_auto    = col_euro_auto if col_euro_auto in cols else None
+    col_kuerzel_auto = pick_col(("kürzel", "kuerzel", "initial", "zeichen", "pl", "ks"))
+    col_tage_auto    = pick_col(("einsatztage", "einsätze", "einsatz", "tage", "soll"))
+    col_euro_auto    = pick_col(("rechnung", "betrag", "€", "eur"))
 
-c1, c2, c3 = st.columns(3)
-col_kuerzel = c1.selectbox(
-    "Spalte: Kürzel",
-    options=cols,
-    index=idx_or_zero(cols, col_kuerzel_auto),
-)
-col_tage_soll = c2.selectbox(
-    "Spalte: Einsatztage SOLL",
-    options=cols,
-    index=idx_or_zero(cols, col_tage_auto),
-)
-euro_options = [None] + cols
-col_betrag_soll = c3.selectbox(
-    "Spalte: Rechnungsstellung SOLL (€) (optional)",
-    options=euro_options,
-    index=idx_or_zero(euro_options, col_euro_auto),
-)
+    # Spaltenliste einmal bauen
+    cols = list(df_abrechnung.columns)
 
+    # Helper: sicheren Index holen
+    def idx_or_zero(seq, val):
+        try:
+            return seq.index(val)
+        except Exception:
+            return 0
+
+    # Auto-Erkennung absichern
+    col_kuerzel_auto = col_kuerzel_auto if col_kuerzel_auto in cols else cols[0]
+    col_tage_auto    = col_tage_auto if col_tage_auto in cols else cols[0]
+    col_euro_auto    = col_euro_auto if (col_euro_auto in cols) else None
+
+    c1, c2, c3 = st.columns(3)
+    col_kuerzel = c1.selectbox(
+        "Spalte: Kürzel",
+        options=cols,
+        index=idx_or_zero(cols, col_kuerzel_auto),
+    )
+    col_tage_soll = c2.selectbox(
+        "Spalte: Einsatztage SOLL",
+        options=cols,
+        index=idx_or_zero(cols, col_tage_auto),
+    )
+    euro_options = [None] + cols
+    col_betrag_soll = c3.selectbox(
+        "Spalte: Rechnungsstellung SOLL (€) (optional)",
+        options=euro_options,
+        index=idx_or_zero(euro_options, col_euro_auto),
+    )
 
     # 5) Abrechnung auf die benötigten Spalten reduzieren & Zahlen cleanen
     abr_cols = [col_kuerzel, col_tage_soll] + ([col_betrag_soll] if col_betrag_soll else [])
@@ -401,12 +415,10 @@ col_betrag_soll = c3.selectbox(
         )
 
     st.subheader("📊 Vergleichstabelle")
-    # Spaltenreihenfolge: Kürzel, Externe_Stunden, Tage_IST, Einsatztage_SOLL, Diff_Tage, Euro(optional)
-    cols = ["Kürzel", "Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]
+    cols_out = ["Kürzel", "Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]
     if "Rechnungsstellung_SOLL" in merged.columns:
-        cols.append("Rechnungsstellung_SOLL")
+        cols_out.append("Rechnungsstellung_SOLL")
 
-    # angenehme Rundungen für Anzeige
     out = merged.copy()
     if "Externe_Stunden" in out:
         out["Externe_Stunden"] = out["Externe_Stunden"].round(2)
@@ -414,7 +426,7 @@ col_betrag_soll = c3.selectbox(
     out["Einsatztage_SOLL"] = out["Einsatztage_SOLL"].round(2)
     out["Diff_Tage"] = out["Diff_Tage"].round(2)
 
-    st.dataframe(out[cols].sort_values("Kürzel"), use_container_width=True)
+    st.dataframe(out[cols_out].sort_values("Kürzel"), use_container_width=True)
 
     st.caption(
         f"Vergleichslogik: Externe_Stunden (Zeitdaten) ÷ {std_pro_tag:g} = Tage_IST. "
