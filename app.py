@@ -281,62 +281,123 @@ elif page == "💰 Abrechnungs-Vergleich":
 
     upload = st.file_uploader("Lade eine Abrechnungs-Excel hoch", type=["xlsx"])
 
-    if upload:
-        df_abrechnung = pd.read_excel(upload, sheet_name=0, header=None)
+    # Parameter: wie viele Stunden gelten als 1 Einsatztag?
+    std_pro_tag = st.number_input("Arbeitsstunden pro Tag (für Umrechnung Stunden → Tage)", min_value=1.0, max_value=12.0, value=8.0, step=0.5)
 
-        zielzeile = None
-        for i, row in df_abrechnung.iterrows():
-            if row.astype(str).str.contains(r"Rechnungsstellung.*(€|EUR)", case=False, regex=True).any():
-                zielzeile = i
+    if upload:
+        # 1) Rohdaten ohne Header einlesen, um die Headerzeile zu finden
+        df0 = pd.read_excel(upload, sheet_name=0, header=None)
+
+        # Heuristik: erste Zeile, die "einsatztage" oder "rechnung" erwähnt, als Header verwenden
+        header_row = None
+        kws = ("einsatztage", "rechnung", "kürzel", "kuerzel", "eur", "€")
+        for i, row in df0.iterrows():
+            row_text = " ".join(row.astype(str).str.lower().tolist())
+            if any(k in row_text for k in kws):
+                header_row = i
                 break
 
-        if zielzeile is None:
-            st.warning("⚠️ Keine Zeile mit 'Rechnungsstellung [€]' gefunden.")
+        if header_row is None:
+            # Fallback: nimm die erste nicht-leere Zeile
+            for i, row in df0.iterrows():
+                if row.notna().sum() >= 3:
+                    header_row = i
+                    break
+
+        # Mit gefundener Headerzeile neu einlesen
+        df_abrechnung = pd.read_excel(upload, sheet_name=0, header=header_row)
+        # Leerspalten raus
+        df_abrechnung = df_abrechnung.loc[:, df_abrechnung.columns.notna()]
+        df_abrechnung = df_abrechnung.dropna(how="all", axis=1)
+
+        # 2) Spalten automatisch erkennen (und per UI änderbar machen)
+        def find_col(cands):
+            for c in df_abrechnung.columns:
+                name = str(c).strip().lower()
+                if any(x in name for x in cands):
+                    return c
+            return None
+
+        # mögliche Kandidaten
+        col_kuerzel_auto = find_col(("kürzel", "kuerzel", "ks", "initial", "zeichen"))
+        col_tage_soll_auto = find_col(("einsatztage", "tage", "soll"))
+        col_betrag_soll_auto = find_col(("rechnung", "betrag", "€", "eur"))
+
+        st.subheader("🧾 Spaltenzuordnung")
+        col1, col2, col3 = st.columns(3)
+        col_kuerzel = col1.selectbox("Spalte: Kürzel", options=list(df_abrechnung.columns), index=(list(df_abrechnung.columns).index(col_kuerzel_auto) if col_kuerzel_auto in df_abrechnung.columns else 0))
+        col_tage_soll = col2.selectbox("Spalte: Einsatztage SOLL", options=list(df_abrechnung.columns), index=(list(df_abrechnung.columns).index(col_tage_soll_auto) if col_tage_soll_auto in df_abrechnung.columns else 0))
+        col_betrag_soll = col3.selectbox("Spalte: Rechnungsstellung SOLL (€)", options=[None] + list(df_abrechnung.columns), index=(1 + list(df_abrechnung.columns).index(col_betrag_soll_auto) if col_betrag_soll_auto in df_abrechnung.columns else 0))
+
+        # 3) Cleanen & aufbereiten (nur relevante Spalten)
+        abr = df_abrechnung[[col_kuerzel, col_tage_soll] + ([col_betrag_soll] if col_betrag_soll else [])].copy()
+        abr.columns = ["Kürzel", "Einsatztage_SOLL"] + (["Rechnungsstellung_SOLL"] if col_betrag_soll else [])
+
+        # Zahlen normalisieren (Komma/€/Punkte)
+        def to_float(x):
+            s = str(x)
+            s = s.replace("€", "").replace(".", "").replace(" ", "").replace("\xa0", "")
+            s = s.replace(",", ".")
+            s = s.replace("-", "0")
+            try:
+                return float(s)
+            except:
+                return 0.0
+
+        abr["Einsatztage_SOLL"] = abr["Einsatztage_SOLL"].apply(to_float)
+        if "Rechnungsstellung_SOLL" in abr.columns:
+            abr["Rechnungsstellung_SOLL"] = abr["Rechnungsstellung_SOLL"].apply(to_float)
+
+        # ggf. Dubletten je Kürzel aufsummieren
+        abr = abr.groupby("Kürzel", as_index=False).sum(numeric_only=True)
+
+        # 4) Zeitdaten (Extern) → Tage_IST je Kürzel
+        df_all = st.session_state.get("df")
+        kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
+
+        if not isinstance(df_all, pd.DataFrame) or df_all.empty:
+            st.warning("⚠️ Keine Zeitdaten geladen (Seite '📁 Daten hochladen').")
+        elif kuerzel_map.empty or "Kürzel" not in kuerzel_map.columns:
+            st.warning("⚠️ Kein Kürzel-Mapping gefunden. Bitte zuerst in '🧠 Zweck-Kategorisierung' pflegen.")
         else:
-            kuerzel_row = df_abrechnung.iloc[zielzeile - 1]
-            werte_row = df_abrechnung.iloc[zielzeile + 1]
-            gueltige_spalten = kuerzel_row[kuerzel_row.notna()].index
+            # sicherstellen, dass Mapping Spalten heißen wie erwartet
+            if "Name" not in kuerzel_map.columns:
+                # falls jemand CSV umbenannt hat
+                kuerzel_map.columns = ["Name", "Kürzel"]
 
-            df_clean = pd.DataFrame({
-                "Kürzel": kuerzel_row[gueltige_spalten].values,
-                "Rechnungsstellung_SOLL": werte_row[gueltige_spalten].values
-            })
+            # Extern-Daten aggregieren
+            df_ext = df_all[df_all.get("Verrechenbarkeit").isin(["Extern"])]
+            df_ext = df_ext.groupby("Mitarbeiter", as_index=False)["Dauer"].sum()
 
-            df_clean["Rechnungsstellung_SOLL"] = (
-                df_clean["Rechnungsstellung_SOLL"]
-                .astype(str)
-                .str.replace("€", "", regex=False)
-                .str.replace(".", "", regex=False)
-                .str.replace(",", ".", regex=False)
-                .str.replace("-", "0", regex=False)
-                .astype(float)
-            )
+            # Mitarbeiter → Kürzel mappen
+            df_ext = df_ext.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
+            df_ext = df_ext.dropna(subset=["Kürzel"])
 
-            abrechnung_grouped = df_clean.groupby("Kürzel", as_index=False).sum()
+            # Stunden → Tage
+            df_ext["Tage_IST"] = df_ext["Dauer"] / float(std_pro_tag)
+            ist_by_k = df_ext.groupby("Kürzel", as_index=False)["Tage_IST"].sum()
 
-            kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
-            if kuerzel_map.empty or "Kürzel" not in kuerzel_map.columns:
-                st.warning("⚠️ Kein Kürzel-Mapping gefunden. Bitte zuerst in der Zweck-Kategorisierung pflegen.")
-            else:
-                if "Name" not in kuerzel_map.columns:
-                    kuerzel_map.columns = ["Name", "Kürzel"]
+            # 5) Zusammenführen
+            merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
+            merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
-                df_all = st.session_state.get("df")
-                if not isinstance(df_all, pd.DataFrame):
-                    st.warning("⚠️ Keine Zeitdaten geladen.")
-                else:
-                    df_ext = df_all[df_all["Verrechenbarkeit"] == "Extern"]
-                    df_ext = df_ext.groupby("Mitarbeiter")["Dauer"].sum().reset_index()
+            # Optionale Controlling-Summe
+            if "Rechnungsstellung_SOLL" in merged.columns:
+                sum_betrag = merged["Rechnungsstellung_SOLL"].sum()
+                st.metric("∑ Rechnungsstellung SOLL (€)", f"{sum_betrag:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-                    df_ext = df_ext.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
-                    df_ext = df_ext.dropna(subset=["Kürzel"])
+            st.subheader("📊 Vergleichstabelle")
+            # Optional: schöne Spaltenreihenfolge
+            cols = ["Kürzel", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]
+            if "Rechnungsstellung_SOLL" in merged.columns:
+                cols.append("Rechnungsstellung_SOLL")
+            # für Kontext auch die (anonymisierten) Mitarbeitenden dazulegen:
+            merged = merged[cols]
+            st.dataframe(merged, use_container_width=True)
 
-                    merged = df_ext.merge(abrechnung_grouped, on="Kürzel", how="left")
-                    merged["Rechnungsstellung_SOLL"] = merged["Rechnungsstellung_SOLL"].fillna(0)
-                    merged["Differenz"] = merged["Dauer"] - merged["Rechnungsstellung_SOLL"]
+            # Kurze Hinweise
+            st.caption(f"Umrechnung: 1 Tag = {std_pro_tag:g} Stunden. 'Tage_IST' basieren ausschließlich auf Zeitdaten mit Verrechenbarkeit = Extern.")
 
-                    st.subheader("📊 Vergleichstabelle")
-                    st.dataframe(merged, use_container_width=True)
 
 elif page == "📤 Export":
     st.title("📤 Datenexport")
