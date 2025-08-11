@@ -279,102 +279,112 @@ elif page == "📊 Analyse & Visualisierung":
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
-    # 1) Parameter für Umrechnung Stunden -> Tage
+    # Umrechnung Stunden -> Tage
     std_pro_tag = st.number_input(
         "Arbeitsstunden pro Tag (für Umrechnung Stunden → Tage)",
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
     )
 
-    # 2) Abrechnungs-Excel hochladen
     upload = st.file_uploader("Lade eine Abrechnungs-Excel hoch", type=["xlsx"])
     if not upload:
         st.stop()
 
-    # 3) Abrechnung einlesen (mit Header der Datei)
+    # ── Datei roh einlesen (ohne Header), weil das Sheet eine Matrix ist
     try:
-        df_abrechnung = pd.read_excel(upload, sheet_name=0, header=0)
+        raw = pd.read_excel(upload, sheet_name=0, header=None)
     except Exception as e:
         st.error(f"Abrechnung konnte nicht gelesen werden: {e}")
         st.stop()
 
-    # Leerspalten & -zeilen aufräumen
-    df_abrechnung = df_abrechnung.loc[:, df_abrechnung.columns.notna()]
-    df_abrechnung = df_abrechnung.dropna(how="all", axis=1)
-    df_abrechnung = df_abrechnung.dropna(how="all", axis=0)
-
-    # 4) Spaltenauswahl – du bestimmst, welche Spalte was ist
-    st.subheader("🧾 Spaltenzuordnung")
-
-    # kleine Heuristik für Vorauswahl
-    def pick_col(cands, default=None):
-        for c in df_abrechnung.columns:
-            n = str(c).lower()
-            if any(k in n for k in cands):
-                return c
-        return default if (default in df_abrechnung.columns) else (df_abrechnung.columns[0])
-
-    col_kuerzel_auto = pick_col(("kürzel", "kuerzel", "initial", "zeichen", "pl", "ks"))
-    col_tage_auto    = pick_col(("einsatztage", "einsätze", "einsatz", "tage", "soll"))
-    col_euro_auto    = pick_col(("rechnung", "betrag", "€", "eur"))
-
-    # Spaltenliste einmal bauen
-    cols = list(df_abrechnung.columns)
-
-    # Helper: sicheren Index holen
-    def idx_or_zero(seq, val):
-        try:
-            return seq.index(val)
-        except Exception:
-            return 0
-
-    # Auto-Erkennung absichern
-    col_kuerzel_auto = col_kuerzel_auto if col_kuerzel_auto in cols else cols[0]
-    col_tage_auto    = col_tage_auto if col_tage_auto in cols else cols[0]
-    col_euro_auto    = col_euro_auto if (col_euro_auto in cols) else None
-
-    c1, c2, c3 = st.columns(3)
-    col_kuerzel = c1.selectbox(
-        "Spalte: Kürzel",
-        options=cols,
-        index=idx_or_zero(cols, col_kuerzel_auto),
-    )
-    col_tage_soll = c2.selectbox(
-        "Spalte: Einsatztage SOLL",
-        options=cols,
-        index=idx_or_zero(cols, col_tage_auto),
-    )
-    euro_options = [None] + cols
-    col_betrag_soll = c3.selectbox(
-        "Spalte: Rechnungsstellung SOLL (€) (optional)",
-        options=euro_options,
-        index=idx_or_zero(euro_options, col_euro_auto),
-    )
-
-    # 5) Abrechnung auf die benötigten Spalten reduzieren & Zahlen cleanen
-    abr_cols = [col_kuerzel, col_tage_soll] + ([col_betrag_soll] if col_betrag_soll else [])
-    abr = df_abrechnung[abr_cols].copy()
-    abr.columns = ["Kürzel", "Einsatztage_SOLL"] + (["Rechnungsstellung_SOLL"] if col_betrag_soll else [])
-
+    # Helper fürs Zahl-Parsen (€, Punkt/Komma, Leerzeichen etc.)
     def to_float(x):
         s = str(x)
-        s = s.replace("€", "").replace("\u20ac", "")  # €-Zeichen
-        s = s.replace(".", "").replace(" ", "").replace("\xa0", "")
-        s = s.replace(",", ".").replace("-", "0")
+        s = s.replace("€", "").replace("\u20ac", "")
+        s = s.replace("'", "")  # Tausendertrenner, falls CH-Format
+        s = s.replace(".", "").replace("\xa0", "").replace(" ", "")
+        s = s.replace(",", ".")
+        s = s.replace("-", "0")
         try:
             return float(s)
         except:
-            return 0.0
+            return None
 
-    abr["Einsatztage_SOLL"] = abr["Einsatztage_SOLL"].apply(to_float)
-    if "Rechnungsstellung_SOLL" in abr.columns:
-        abr["Rechnungsstellung_SOLL"] = abr["Rechnungsstellung_SOLL"].apply(to_float)
+    # ── 1) Euro-Spalte automatisch finden und Summe bilden
+    euro_col_idx = None
+    for j in range(min(40, raw.shape[1])):                # nur die ersten ~40 Spalten scannen
+        col_text = " ".join(raw[j].dropna().astype(str).str.lower().tolist())
+        if ("rechnungsstellung" in col_text) and (("€" in col_text) or ("eur" in col_text)):
+            euro_col_idx = j
+            break
 
-    # Zeilen ohne Kürzel entfernen & Dubletten je Kürzel aufsummieren
-    abr = abr.dropna(subset=["Kürzel"])
-    abr["Kürzel"] = abr["Kürzel"].astype(str).str.strip()
+    euro_sum = 0.0
+    if euro_col_idx is not None:
+        euro_vals = raw[euro_col_idx].apply(to_float)
+        euro_sum = pd.Series([v for v in euro_vals if v is not None]).sum()
+
+    # ── 2) Zeile mit Kürzel-Header erkennen (viele 1–3 Buchstaben in Großschrift)
+    def is_kuerzel_token(s):
+        s = str(s).strip()
+        return s.isupper() and (1 <= len(s) <= 3) and s.isalpha()
+
+    header_row = None
+    header_candidates = []
+    for i in range(min(80, raw.shape[0])):               # obere ~80 Zeilen durchsuchen
+        row = raw.iloc[i]
+        tokens = [str(x).strip() for x in row if is_kuerzel_token(x)]
+        if len(tokens) >= 5:                              # Heuristik: mind. 5 Kürzel in der Zeile
+            header_candidates.append((i, tokens))
+    if header_candidates:
+        header_row = header_candidates[0][0]
+
+    if header_row is None:
+        st.error("Konnte keine Kürzel-Header-Zeile finden (Matrix-Layout). Bitte prüfe das Sheet.")
+        st.stop()
+
+    # Alle Spalten (Indices) sammeln, die in dieser Zeile wie Kürzel aussehen – zusammenhängenden Block nehmen
+    kuerzel_cols = []
+    for j, val in raw.iloc[header_row].items():
+        if is_kuerzel_token(val):
+            kuerzel_cols.append(j)
+
+    # zusammenhängenden Block extrahieren (falls links/rechts "Müll" steht)
+    kuerzel_cols = sorted(kuerzel_cols)
+    # Falls Lücken drin sind, nehmen wir den längsten zusammenhängenden Bereich
+    blocks, cur = [], [kuerzel_cols[0]]
+    for a, b in zip(kuerzel_cols, kuerzel_cols[1:]):
+        if b == a + 1:
+            cur.append(b)
+        else:
+            blocks.append(cur)
+            cur = [b]
+    blocks.append(cur)
+    kuerzel_block = max(blocks, key=len)                 # längster Block
+    kuerzel_cols = kuerzel_block
+
+    # Kürzel-Namen aus der Headerzeile lesen
+    kuerzel_names = [str(raw.iat[header_row, j]).strip() for j in kuerzel_cols]
+
+    # ── 3) Datenbereich nach unten bestimmen: bis "Team Gesamt" / "Monatsübersicht" / leerer Bereich
+    end_row = raw.shape[0] - 1
+    stop_keywords = ("team gesamt", "monatsübersicht", "platzhalter")
+    for i in range(header_row + 1, raw.shape[0]):
+        left_text = str(raw.iat[i, 0]).strip().lower()
+        full_text = " ".join(raw.iloc[i].astype(str).tolist()).lower()
+        if any(k in left_text for k in stop_keywords) or any(k in full_text for k in stop_keywords):
+            end_row = i - 1
+            break
+
+    # ── 4) Einsatztage_SOLL je Kürzel summieren (nur Zahlen in diesem Bereich)
+    soll_summen = []
+    for j, name in zip(kuerzel_cols, kuerzel_names):
+        col_vals = raw.iloc[header_row + 1:end_row + 1, j].apply(to_float)
+        val = pd.Series([v for v in col_vals if v is not None]).sum()
+        soll_summen.append({"Kürzel": name, "Einsatztage_SOLL": float(val)})
+
+    abr = pd.DataFrame(soll_summen)
     abr = abr.groupby("Kürzel", as_index=False).sum(numeric_only=True)
 
-    # 6) Zeitdaten aus Session (Extern-Stunden je Mitarbeiter) -> via Kürzel mappen
+    # ── 5) Zeitdaten aus Session: Externe Stunden je Mitarbeiter -> über Kürzel mappen -> Tage_IST
     df_all = st.session_state.get("df")
     kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
 
@@ -385,40 +395,30 @@ elif page == "💰 Abrechnungs-Vergleich":
         st.warning("⚠️ Kein gültiges Kürzel-Mapping gefunden. Bitte zuerst in '🧠 Zweck-Kategorisierung' pflegen.")
         st.stop()
 
-    # nur Extern
     df_ext = df_all[df_all.get("Verrechenbarkeit").isin(["Extern"])].copy()
     if df_ext.empty:
         st.info("Keine externen Zeitdaten vorhanden.")
         st.stop()
 
-    # Stunden je Mitarbeiter summieren
     df_ext_group = df_ext.groupby("Mitarbeiter", as_index=False)["Dauer"].sum().rename(columns={"Dauer": "Externe_Stunden"})
-
-    # Mitarbeiter -> Kürzel mappen
     df_ext_map = df_ext_group.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
     df_ext_map = df_ext_map.dropna(subset=["Kürzel"])
     df_ext_map["Kürzel"] = df_ext_map["Kürzel"].astype(str).str.strip()
-
-    # Stunden je Kürzel summieren + Tage_IST berechnen
     ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # 7) Zusammenführen: IST (Tage_IST) vs SOLL (Einsatztage_SOLL) + Euro als Info
+    # ── 6) Zusammenführen & Ausgabe
     merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
-    # 8) Ausgabe
-    if "Rechnungsstellung_SOLL" in merged.columns:
+    # Summe Euro anzeigen (aus kompletter Spalte "Rechnungsstellung [€]")
+    if euro_col_idx is not None:
         st.metric(
             "∑ Rechnungsstellung SOLL (€)",
-            f"{merged['Rechnungsstellung_SOLL'].sum():,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            f"{euro_sum:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
 
     st.subheader("📊 Vergleichstabelle")
-    cols_out = ["Kürzel", "Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]
-    if "Rechnungsstellung_SOLL" in merged.columns:
-        cols_out.append("Rechnungsstellung_SOLL")
-
     out = merged.copy()
     if "Externe_Stunden" in out:
         out["Externe_Stunden"] = out["Externe_Stunden"].round(2)
@@ -426,14 +426,15 @@ elif page == "💰 Abrechnungs-Vergleich":
     out["Einsatztage_SOLL"] = out["Einsatztage_SOLL"].round(2)
     out["Diff_Tage"] = out["Diff_Tage"].round(2)
 
+    cols_out = ["Kürzel", "Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]
+    # (Euro nur gesamt relevant; wenn du pro Kürzel auch Euro hast, könnten wir das später ergänzen)
     st.dataframe(out[cols_out].sort_values("Kürzel"), use_container_width=True)
 
     st.caption(
         f"Vergleichslogik: Externe_Stunden (Zeitdaten) ÷ {std_pro_tag:g} = Tage_IST. "
-        "Verglichen mit Einsatztage_SOLL aus der Abrechnungsdatei. "
-        "Die Euro-Summe wird nur informativ angezeigt und fließt nicht in den Tagesvergleich ein."
+        "Verglichen mit Einsatztage_SOLL (Summe der Kürzel-Spalten in der Abrechnungsdatei). "
+        "Die Euro-Summe wird 1:1 als Gesamtwert aus der Abrechnungsdatei übernommen."
     )
-
 
 elif page == "📤 Export":
     st.title("📤 Datenexport")
