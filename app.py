@@ -15,7 +15,7 @@ from reportlab.platypus import Image as RLImage, SimpleDocTemplate, Spacer, Tabl
 # Layout & App-Setup
 # ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Zeitdatenanalyse Dashboard", page_icon="🧠", layout="wide")
-APP_VERSION = "v0.1.0"
+APP_VERSION = "v0.1.1"
 
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
@@ -341,20 +341,18 @@ elif page == "📁 Daten hochladen":
             
 elif page == "🧠 Zweck-Kategorisierung":
     st.title("🧠 Zweck-Kategorisierung & Mapping")
-    df = st.session_state.get("df")
-    if df is None or "Zweck" not in df.columns:
-        st.warning("⚠️ Bitte zuerst eine Excel-Datei hochladen.")
-    else:
-        # ---------- 1) Automatisches GPT-Mapping NUR für neue Zwecke ----------
-        # Aktuelle & bekannte Zwecke robust ermitteln
-        mapping_df = st.session_state.get("mapping_df", lade_mapping())
-        aktuelle_zwecke = set(
-            df["Zweck"].dropna().astype(str).str.strip()
-        )
-        bekannte_zwecke = set()
-        if not mapping_df.empty and "Zweck" in mapping_df.columns:
-            bekannte_zwecke = set(mapping_df["Zweck"].dropna().astype(str).str.strip())
 
+    # Mapping immer laden
+    mapping_df = st.session_state.get("mapping_df", lade_mapping())
+    df = st.session_state.get("df")
+
+    if df is None or "Zweck" not in df.columns:
+        st.info("ℹ️ Keine Zeitdaten geladen – du kannst trotzdem das Mapping und Kürzel bearbeiten.")
+
+    else:
+        # ---------- 1) Automatisches GPT-Mapping nur für neue Zwecke ----------
+        aktuelle_zwecke = set(df["Zweck"].dropna().astype(str).str.strip())
+        bekannte_zwecke = set(mapping_df["Zweck"].dropna().astype(str).str.strip())
         neue_zwecke = sorted(aktuelle_zwecke - bekannte_zwecke)
 
         st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
@@ -365,8 +363,7 @@ elif page == "🧠 Zweck-Kategorisierung":
                 neue_mapping = []
                 with st.spinner(f"🧠 {len(neue_zwecke)} neue Zwecke – KI klassifiziert..."):
                     for zweck in neue_zwecke:
-                        kat = klassifiziere_verrechenbarkeit(zweck)  # erwartetes Ergebnis: "Intern" oder "Extern"
-                        # Falls die KI etwas Unerwartetes zurückgibt, leer lassen -> manuell nachpflegen
+                        kat = klassifiziere_verrechenbarkeit(zweck)
                         if kat not in ("Intern", "Extern"):
                             kat = None
                         neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
@@ -378,72 +375,64 @@ elif page == "🧠 Zweck-Kategorisierung":
                     st.session_state["mapping_df"] = mapping_df
                     speichere_mapping(mapping_df)
                     st.success("✅ Neues Mapping gespeichert.")
-            except Exception as e:
-                st.warning("⚠️ KI-Mapping konnte nicht automatisch durchgeführt werden. Bitte manuell nachpflegen.")
-                # kein st.stop(); wir erlauben manuelle Bearbeitung
+            except Exception:
+                st.warning("⚠️ KI-Mapping konnte nicht automatisch durchgeführt werden.")
 
-        # ---------- 2) Mapping anwenden (merge) ----------
-        df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
-        df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
-        st.session_state["df"] = df
+        # Mapping anwenden
+        if df is not None:
+            df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+            df = df.merge(mapping_df, on="Zweck", how="left")
+            st.session_state["df"] = df
 
-        # ---------- 3) Tabs: aktuelles Mapping & manuell bearbeiten ----------
-        tab1, tab2, tab3 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten", "👥 Mitarbeiter-Kürzel"])
+    # ---------- Tabs: Mapping und Kürzel IMMER anzeigen ----------
+    tab1, tab2, tab3 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten", "👥 Mitarbeiter-Kürzel"])
 
-        with tab1:
-            st.caption("Übersicht aller bekannten Zweck→Verrechenbarkeit-Zuordnungen.")
-            show_map = st.session_state["mapping_df"].copy()
-            if not show_map.empty:
-                show_map = show_map.sort_values("Zweck")
-            st.dataframe(show_map, use_container_width=True)
+    with tab1:
+        st.caption("Übersicht aller bekannten Zweck→Verrechenbarkeit-Zuordnungen.")
+        show_map = mapping_df.copy()
+        if not show_map.empty:
+            show_map = show_map.sort_values("Zweck")
+        st.dataframe(show_map, use_container_width=True)
 
-        with tab2:
-            st.caption("Manuelle Korrektur/Ergänzung des Zweck-Mappings.")
-            edited_df = st.data_editor(
-                st.session_state["mapping_df"],
-                num_rows="dynamic",
-                use_container_width=True,
-                key="mapping_editor"
-            )
-            if st.button("💾 Änderungen speichern", key="save_purpose_mapping"):
-                # Persistenz + erneutes Anwenden
-                edited_df.drop_duplicates(subset=["Zweck"], keep="last", inplace=True)
-                st.session_state["mapping_df"] = edited_df
-                speichere_mapping(edited_df)
+    with tab2:
+        st.caption("Manuelle Korrektur/Ergänzung des Zweck-Mappings.")
+        edited_df = st.data_editor(
+            mapping_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="mapping_editor"
+        )
+        if st.button("💾 Änderungen speichern", key="save_purpose_mapping"):
+            edited_df.drop_duplicates(subset=["Zweck"], keep="last", inplace=True)
+            st.session_state["mapping_df"] = edited_df
+            speichere_mapping(edited_df)
 
-                df_tmp = st.session_state["df"].drop(columns=["Verrechenbarkeit"], errors="ignore")
+            if df is not None:
+                df_tmp = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
                 df_tmp = df_tmp.merge(edited_df, on="Zweck", how="left")
                 st.session_state["df"] = df_tmp
 
-                st.success("✅ Mapping gespeichert & angewendet.")
+            st.success("✅ Mapping gespeichert & angewendet.")
 
-        # ---------- 4) Mitarbeiter-Kürzel direkt hier pflegen (Session-Only, keine CSV) ----------
-        with tab3:
-            st.caption("Trage hier manuell die Kürzel zu den Mitarbeitenden ein. Diese werden im Abrechnungs-Vergleich verwendet.")
-            # Basis: alle Namen aus den Zeitdaten
-            alle_namen = sorted(set(df["Mitarbeiter"].dropna().astype(str)))
+    with tab3:
+        st.caption("Mitarbeiter-Kürzel pflegen (persistiert in kuerzel.csv).")
 
-            # Bisheriges Mapping aus Session laden (falls vorhanden)
-            existing = st.session_state.get("kuerzel_map")
-            if existing is None or existing.empty or "Name" not in existing.columns or "Kürzel" not in existing.columns:
-                kuerzel_df = pd.DataFrame({"Name": alle_namen, "Kürzel": [""] * len(alle_namen)})
-            else:
-                # Union aus vorhandenen Namen + neuen Namen, Kürzel wenn vorhanden beibehalten
-                kuerzel_df = pd.DataFrame({"Name": alle_namen})
-                kuerzel_df = kuerzel_df.merge(existing[["Name", "Kürzel"]], on="Name", how="left").fillna({"Kürzel": ""})
+        kuerzel_df = st.session_state.get("kuerzel_map", lade_kuerzel())
+        if kuerzel_df.empty:
+            kuerzel_df = pd.DataFrame(columns=["Name", "Kürzel"])
 
-            edited_kuerzel_df = st.data_editor(
-                kuerzel_df,
-                key="kuerzel_editor",
-                use_container_width=True,
-                num_rows="dynamic"
-            )
-            if st.button("💾 Kürzel speichern", key="save_initials"):
-                # nur eindeutige Namen, leere Kürzel erlaubt (dann werden diese Personen im Vergleich ignoriert)
-                edited_kuerzel_df.drop_duplicates(subset=["Name"], keep="last", inplace=True)
-                st.session_state["kuerzel_map"] = edited_kuerzel_df
-                st.success("✅ Kürzel wurden gespeichert.")
+        edited_kuerzel_df = st.data_editor(
+            kuerzel_df,
+            key="kuerzel_editor",
+            use_container_width=True,
+            num_rows="dynamic"
+        )
 
+        if st.button("💾 Kürzel speichern", key="save_initials"):
+            edited_kuerzel_df.drop_duplicates(subset=["Name"], keep="last", inplace=True)
+            st.session_state["kuerzel_map"] = edited_kuerzel_df
+            speichere_kuerzel(edited_kuerzel_df)
+            st.success("✅ Kürzel wurden gespeichert und bleiben erhalten.")
 
 
 elif page == "📊 Analyse & Visualisierung":
@@ -492,12 +481,12 @@ elif page == "💰 Abrechnungs-Vergleich":
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
     )
 
-    # Datei hochladen (CSV bevorzugt; XLSX wird nur als Vorschau gezeigt)
+    # Datei hochladen (CSV bevorzugt; XLSX nur als Vorschau)
     upload = st.file_uploader("Lade eine Abrechnungs-Datei hoch (CSV bevorzugt, zur Not XLSX)", type=["csv", "xlsx"])
     if not upload:
         st.stop()
 
-    # --- 1) CSV-parsen (robust, nutzt read_abrechnung_csv) ---
+    # --- 1) CSV parsen (robust) ---
     abr = None
     if upload.name.lower().endswith(".csv"):
         try:
@@ -508,7 +497,7 @@ elif page == "💰 Abrechnungs-Vergleich":
             st.error(f"CSV konnte nicht gelesen werden: {e}")
             st.stop()
 
-    # --- 2) XLSX-Fallback: nur Vorschau + Hinweis, bitte als CSV exportieren ---
+    # --- 2) XLSX-Fallback ---
     if abr is None and upload.name.lower().endswith(".xlsx"):
         try:
             xdf = pd.read_excel(upload, sheet_name=0, header=None)
@@ -525,10 +514,10 @@ elif page == "💰 Abrechnungs-Vergleich":
 
     # --- 3) Zeitdaten (IST) aufbereiten ---
     df_all = st.session_state.get("df")
-    kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
+    kuerzel_map = st.session_state.get("kuerzel_map", lade_kuerzel())
 
-    if not isinstance(df_all, pd.DataFrame) or df_all.empty:
-        st.warning("⚠️ Keine Zeitdaten geladen (Seite „📁 Daten hochladen“).")
+    if (df_all is None) or df_all.empty:
+        st.warning("⚠️ Keine Zeitdaten geladen (Seite „📁 Daten hochladen“). Der Vergleich ist erst nach Upload möglich.")
         st.stop()
 
     if kuerzel_map.empty or not set(["Name", "Kürzel"]).issubset(kuerzel_map.columns):
@@ -545,6 +534,8 @@ elif page == "💰 Abrechnungs-Vergleich":
               .sum()
               .rename(columns={"Dauer": "Externe_Stunden"})
     )
+
+    # Kürzel joinen – unabhängig davon, ob Datei neu geladen wurde
     df_ext_map = df_ext_group.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
     df_ext_map = df_ext_map.dropna(subset=["Kürzel"])
     df_ext_map["Kürzel"] = df_ext_map["Kürzel"].astype(str).str.strip()
@@ -552,7 +543,7 @@ elif page == "💰 Abrechnungs-Vergleich":
     ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # --- 4) Merge CSV (SOLL) mit IST aus Zeitdaten ---
+    # --- 4) Merge CSV (SOLL) mit IST ---
     merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
@@ -574,7 +565,6 @@ elif page == "💰 Abrechnungs-Vergleich":
         f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. "
         f"Diff_Tage = Tage_IST − Einsatztage_SOLL."
     )
-
 
 elif page == "📤 Export":
     st.title("📤 Datenexport")
