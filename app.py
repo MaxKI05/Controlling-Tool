@@ -342,7 +342,7 @@ elif page == "📊 Analyse & Visualisierung":
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
-    # Umrechnung Stunden -> Tage (IST-Seite)
+    # 1) Parameter
     std_pro_tag = st.number_input(
         "Arbeitsstunden pro Tag (für Umrechnung Stunden → Tage)",
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
@@ -352,57 +352,124 @@ elif page == "💰 Abrechnungs-Vergleich":
     if not upload:
         st.stop()
 
-    # --- Roh einlesen (ohne Header), weil das Sheet ein Matrix/Report-Layout hat
+    # ---------- Excel als Werte laden (Formelergebnisse) ----------
     try:
-        raw = pd.read_excel(upload, sheet_name=0, header=None)
+        import openpyxl
+    except Exception:
+        st.error("openpyxl fehlt. Bitte `openpyxl` in requirements.txt eintragen.")
+        st.stop()
+
+    try:
+        wb = openpyxl.load_workbook(upload, data_only=True)
     except Exception as e:
         st.error(f"Abrechnung konnte nicht gelesen werden: {e}")
         st.stop()
 
-    # -------- Helpers
-    def to_float(x):
-        s = str(x)
-        s = s.replace("€", "").replace("\u20ac", "")
-        s = s.replace("'", "")
-        s = s.replace("\xa0", "").replace(" ", "")
-        s = s.replace(",", ".")
+    sheetnames = wb.sheetnames
+    sheet_name = st.selectbox("Sheet/Monat auswählen", sheetnames, index=len(sheetnames)-1 if sheetnames else 0)
+    ws = wb[sheet_name]
+
+    # Hilfen
+    import string
+    def col_idx_to_letter(idx: int) -> str:
+        # 0-basiert → A, B, ..., Z, AA, AB, ...
+        idx += 1
+        letters = ""
+        while idx > 0:
+            idx, rem = divmod(idx - 1, 26)
+            letters = chr(65 + rem) + letters
+        return letters
+
+    def parse_eu_number(x):
+        if x is None:
+            return None
+        s = str(x).strip()
+        if not s:
+            return None
+        s = s.replace("€", "").replace("\u20ac", "").replace("\xa0", "").replace(" ", "")
+        if "." in s and "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", ".")
         try:
             return float(s)
         except:
-            try:
-                return float(s.replace(".", ""))
-            except:
-                return None
+            return None
 
-    # -------- 1) Versuch: fixe Zeilen 125–136 auslesen (Kürzel + Einsatztage Abrechnung SOLL)
-    try:
-        fixed_block = raw.iloc[124:136, [2, 4]].dropna(how="all")  # C= Kürzel, E = Einsatztage Abrechnung SOLL
-        fixed_block.columns = ["Kürzel", "Einsatztage_SOLL"]
-        fixed_block["Kürzel"] = fixed_block["Kürzel"].astype(str).str.strip()
-        fixed_block["Einsatztage_SOLL"] = pd.to_numeric(
-            fixed_block["Einsatztage_SOLL"], errors="coerce"
-        )
-        fixed_block = fixed_block.dropna(subset=["Kürzel", "Einsatztage_SOLL"])
-    except Exception:
-        fixed_block = pd.DataFrame(columns=["Kürzel", "Einsatztage_SOLL"])
+    # ---------- komplette Tabelle als DataFrame bauen ----------
+    data = []
+    max_cols = 0
+    for row in ws.iter_rows(values_only=True):
+        row_vals = list(row)
+        max_cols = max(max_cols, len(row_vals))
+        data.append(row_vals)
 
-    # --- 2) Falls leer → GPT-Extraktion
-    if fixed_block.empty:
-        from utils.gpt import extrahiere_abrechnungsblock
-        st.info("🤖 Fester Block leer – GPT versucht, die Einsatztage-Zusammenfassung zu erkennen...")
-        try:
-            fixed_block = extrahiere_abrechnungsblock(raw)
-        except Exception as e:
-            st.error(f"❌ GPT-Extraktion fehlgeschlagen: {e}")
-            st.stop()
+    # Spaltennamen A, B, C, ... generieren
+    cols = [col_idx_to_letter(i) for i in range(max_cols)]
+    raw_df = pd.DataFrame(data, columns=cols)
 
-    if fixed_block.empty:
-        st.error("❌ Keine Einsatztage-Zeilen gefunden (weder fix noch GPT).")
+    st.markdown("### 🧱 Tabellenvorschau (ausgewähltes Sheet)")
+    st.caption("Tipp: Scrolle nach unten – die Zusammenfassung steht meist im unteren Bereich.")
+    st.dataframe(raw_df.tail(200), use_container_width=True)
+
+    # ---------- Baukasten: Header-Handling & Auswahl ----------
+    st.markdown("### 🔧 Spalten- & Zeilenauswahl")
+    use_header = st.checkbox("Eine Zeile als Kopfzeile verwenden", value=False)
+    header_row = None
+    df_for_pick = raw_df.copy()
+
+    if use_header:
+        header_row = st.number_input("Kopfzeile (1-basiert)", min_value=1, max_value=len(raw_df), value=max(1, len(raw_df)-30))
+        # Kopf übernehmen
+        header_vals = raw_df.iloc[int(header_row)-1].fillna("").astype(str).str.strip().tolist()
+        # leere Header durch Spaltenbuchstaben ersetzen, Duplikate vermeiden
+        clean_cols = []
+        seen = set()
+        for i, h in enumerate(header_vals):
+            if not h:
+                h = cols[i]
+            base = h
+            k = 1
+            while h in seen:
+                k += 1
+                h = f"{base}_{k}"
+            seen.add(h)
+            clean_cols.append(h)
+        df_for_pick = raw_df.iloc[int(header_row):].reset_index(drop=True)
+        df_for_pick.columns = clean_cols
+
+    # Nutzer wählt Zeilenbereich
+    total_rows = len(df_for_pick)
+    default_start = max(1, total_rows - 15)
+    row_range = st.slider("Zeilenbereich (1-basiert, nach evtl. Kopfzeile)", 1, max(1, total_rows), (default_start, total_rows))
+    r_start, r_end = int(row_range[0]), int(row_range[1])
+    df_slice = df_for_pick.iloc[r_start-1:r_end].copy()
+
+    # Spaltenauswahl
+    kuerzel_col = st.selectbox("Spalte für Kürzel wählen", list(df_slice.columns))
+    soll_col    = st.selectbox("Spalte für Einsatztage Abrechnung SOLL wählen", list(df_slice.columns))
+
+    st.markdown("#### 👀 Auswahl-Vorschau")
+    preview = df_slice[[kuerzel_col, soll_col]].head(20)
+    st.dataframe(preview, use_container_width=True)
+
+    # ---------- Extrahieren & Bereinigen ----------
+    abr_records = []
+    for _, row in df_slice.iterrows():
+        code = str(row.get(kuerzel_col, "")).strip()
+        val  = parse_eu_number(row.get(soll_col))
+        if code and val is not None:
+            abr_records.append({"Kürzel": code, "Einsatztage_SOLL": val})
+    abr = pd.DataFrame(abr_records)
+
+    if abr.empty:
+        st.error("❌ Keine Einsatztage-Zeilen im gewählten Bereich/Spalten gefunden.")
         st.stop()
 
-    abr = fixed_block.groupby("Kürzel", as_index=False).sum(numeric_only=True)
+    st.success(f"✅ {len(abr)} Zeilen aus dem Bereich extrahiert.")
+    st.dataframe(abr, use_container_width=True)
 
-    # -------- 2) Zeitdaten-IST (extern) per Kürzel
+    # ---------- Zeitdaten-IST aus Session (extern) ----------
     df_all = st.session_state.get("df")
     kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
 
@@ -410,7 +477,7 @@ elif page == "💰 Abrechnungs-Vergleich":
         st.warning("⚠️ Keine Zeitdaten geladen (Seite '📁 Daten hochladen').")
         st.stop()
     if kuerzel_map.empty or not set(["Name", "Kürzel"]).issubset(kuerzel_map.columns):
-        st.warning("⚠️ Kein gültiges Kürzel-Mapping gefunden. Bitte zuerst in '🧠 Zweck-Kategorisierung' pflegen.")
+        st.warning("⚠️ Kein gültiges Kürzel-Mapping gefunden. Bitte in '🧠 Zweck-Kategorisierung' pflegen.")
         st.stop()
 
     df_ext = df_all[df_all.get("Verrechenbarkeit").isin(["Extern"])].copy()
@@ -418,16 +485,23 @@ elif page == "💰 Abrechnungs-Vergleich":
         st.info("Keine externen Zeitdaten vorhanden.")
         st.stop()
 
-    df_ext_group = df_ext.groupby("Mitarbeiter", as_index=False)["Dauer"].sum().rename(columns={"Dauer": "Externe_Stunden"})
-    df_ext_map = df_ext_group.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
-    df_ext_map = df_ext_map.dropna(subset=["Kürzel"])
+    df_ext_group = (
+        df_ext.groupby("Mitarbeiter", as_index=False)["Dauer"]
+              .sum()
+              .rename(columns={"Dauer": "Externe_Stunden"})
+    )
+    df_ext_map = (
+        df_ext_group.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
+                    .dropna(subset=["Kürzel"])
+    )
     df_ext_map["Kürzel"] = df_ext_map["Kürzel"].astype(str).str.strip()
-
     ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # -------- 3) Mergen & Anzeige
-    merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
+    # ---------- Mergen & Ausgabe ----------
+    merged = abr.groupby("Kürzel", as_index=False).sum(numeric_only=True).merge(
+        ist_by_k, on="Kürzel", how="outer"
+    ).fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
     out = merged.copy()
@@ -439,14 +513,14 @@ elif page == "💰 Abrechnungs-Vergleich":
 
     st.subheader("📊 Vergleichstabelle")
     st.dataframe(
-        out[["Kürzel", "Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]].sort_values("Kürzel"),
+        out[["Kürzel", "Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]]
+          .sort_values("Kürzel"),
         use_container_width=True
     )
 
     st.caption(
-        f"Fix: Zeilen 125–136 der Abrechnung werden genutzt (Spalte C = Kürzel, Spalte E = Einsatztage SOLL). "
-        f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. "
-        f"Diff_Tage = Tage_IST − Einsatztage_SOLL."
+        f"Quelle: Sheet **{sheet_name}**, Zeilen {r_start}–{r_end}, Spalten **{kuerzel_col}** (Kürzel) und **{soll_col}** (Einsatztage_SOLL). "
+        f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. Diff_Tage = Tage_IST − Einsatztage_SOLL."
     )
 
 
