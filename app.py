@@ -342,7 +342,6 @@ elif page == "📊 Analyse & Visualisierung":
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
-    # Umrechnung Stunden -> Tage (IST-Seite)
     std_pro_tag = st.number_input(
         "Arbeitsstunden pro Tag (für Umrechnung Stunden → Tage)",
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
@@ -352,90 +351,24 @@ elif page == "💰 Abrechnungs-Vergleich":
     if not upload:
         st.stop()
 
-    # --- Roh einlesen (ohne Header), weil das Sheet ein Matrix/Report-Layout hat
     try:
         raw = pd.read_excel(upload, sheet_name=0, header=None)
     except Exception as e:
         st.error(f"Abrechnung konnte nicht gelesen werden: {e}")
         st.stop()
 
-    # -------- Helpers
-    def to_float(x):
-        s = str(x)
-        s = s.replace("€", "").replace("\u20ac", "")
-        s = s.replace("'", "")
-        s = s.replace("\xa0", "").replace(" ", "")
-        s = s.replace(",", ".")
-        # KEIN Tausenderpunkt-Strip hier, weil in der Mini-Tabelle i. d. R. keine Tausender stehen.
-        # Falls doch, nehmen wir nur den Teil vor/nach Komma/Punkt sinnvoll:
-        try:
-            return float(s)
-        except:
-            # naive Fallbacks
-            try:
-                return float(s.replace(".", ""))
-            except:
-                return None
-
-    def is_kuerzel_token(s):
-        s = str(s).strip()
-        return s.isupper() and s.isalpha() and (1 <= len(s) <= 3)
-
-    # -------- 1) Unten die kleine Zusammenfassung finden
-    # Idee: Finde das "beste" Spaltenpaar (j, j+1) mit einer langen,
-    # zusammenhängenden Sequenz: links viele Kürzel, rechts passende Zahlen.
-    best = None  # (len_run, j, start_i, end_i)
-    max_rows_to_scan_from_bottom = min(220, raw.shape[0])  # wir schauen nur die unteren ~200 Zeilen
-    start_row_idx = raw.shape[0] - max_rows_to_scan_from_bottom
-
-    for j in range(0, raw.shape[1] - 1):
-        col_codes = raw.iloc[start_row_idx:, j]
-        col_vals = raw.iloc[start_row_idx:, j + 1]
-
-        codes_mask = col_codes.apply(is_kuerzel_token)
-        vals_mask = col_vals.apply(lambda v: to_float(v) is not None)
-
-        both = (codes_mask.astype(int) & vals_mask.astype(int)).tolist()
-
-        # längsten zusammenhängenden True-Run finden
-        run_len, run_start, cur_len, cur_start = 0, None, 0, None
-        for idx, flag in enumerate(both):
-            if flag:
-                if cur_len == 0:
-                    cur_start = idx
-                cur_len += 1
-                if cur_len > run_len:
-                    run_len = cur_len
-                    run_start = cur_start
-            else:
-                cur_len, cur_start = 0, None
-
-        if run_len >= 5:  # Heuristik: mind. 5 Zeilen am Stück
-            abs_start = start_row_idx + run_start
-            abs_end = abs_start + run_len - 1
-            cand = (run_len, j, abs_start, abs_end)
-            if (best is None) or (cand[0] > best[0]):
-                best = cand
-
-    if best is None:
-        st.error("Konnte die Zusammenfassung unten (Kürzel + Einsatztage) nicht automatisch erkennen.")
-        st.stop()
-
-    _, j_codes, i_start, i_end = best
-    kuerzel_list = raw.iloc[i_start:i_end + 1, j_codes].astype(str).str.strip().tolist()
-    tage_list = raw.iloc[i_start:i_end + 1, j_codes + 1].apply(to_float).tolist()
+    # -------- Fix: Zeilen 125–136 verwenden
+    # Excel ist 0-basiert -> Zeilen 124–135 auswählen
+    kuerzel_list = raw.iloc[124:136, 2].astype(str).str.strip().tolist()  # Spalte C
+    tage_list = raw.iloc[124:136, 3].apply(lambda v: pd.to_numeric(str(v).replace(",", "."), errors="coerce")).tolist()  # Spalte D
 
     abr = pd.DataFrame({"Kürzel": kuerzel_list, "Einsatztage_SOLL": tage_list})
     abr = abr.dropna(subset=["Kürzel"])
-    abr["Kürzel"] = abr["Kürzel"].astype(str).str.strip()
     abr["Einsatztage_SOLL"] = abr["Einsatztage_SOLL"].fillna(0.0)
 
-    # zusammenfassen (falls Duplikate)
-    abr = abr.groupby("Kürzel", as_index=False).sum(numeric_only=True)
+    st.caption("Zusammenfassung fix: Zeilen 125–136 (Spalte C = Kürzel, Spalte D = Einsatztage_SOLL).")
 
-    st.caption(f"Zusammenfassungs-Block erkannt: Spalten {j_codes} & {j_codes+1}, Zeilen {i_start+1}–{i_end+1}.")
-
-    # -------- 2) Zeitdaten-IST (extern) per Kürzel
+    # -------- Zeitdaten IST
     df_all = st.session_state.get("df")
     kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
 
@@ -459,13 +392,12 @@ elif page == "💰 Abrechnungs-Vergleich":
     ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # -------- 3) Mergen & Anzeige
+    # -------- Mergen & anzeigen
     merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
     out = merged.copy()
-    if "Externe_Stunden" in out:
-        out["Externe_Stunden"] = out["Externe_Stunden"].round(2)
+    out["Externe_Stunden"] = out.get("Externe_Stunden", 0).round(2)
     out["Tage_IST"] = out["Tage_IST"].round(2)
     out["Einsatztage_SOLL"] = out["Einsatztage_SOLL"].round(2)
     out["Diff_Tage"] = out["Diff_Tage"].round(2)
@@ -477,10 +409,11 @@ elif page == "💰 Abrechnungs-Vergleich":
     )
 
     st.caption(
-        f"Logik: Unten erkannte Zusammenfassung (Kürzel + Einsatztage_SOLL) wird direkt übernommen. "
+        f"Fix: Zeilen 125–136 der Abrechnung werden genutzt. "
         f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. "
         f"Diff_Tage = Tage_IST − Einsatztage_SOLL."
     )
+
 
 elif page == "📤 Export":
     st.title("📤 Datenexport")
