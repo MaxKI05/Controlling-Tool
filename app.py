@@ -342,6 +342,7 @@ elif page == "📊 Analyse & Visualisierung":
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
+    # Umrechnung Stunden -> Tage (IST-Seite)
     std_pro_tag = st.number_input(
         "Arbeitsstunden pro Tag (für Umrechnung Stunden → Tage)",
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
@@ -351,16 +352,31 @@ elif page == "💰 Abrechnungs-Vergleich":
     if not upload:
         st.stop()
 
-    # Roh laden (ohne Header, wir brauchen die Matrix)
+    # --- Roh einlesen (ohne Header), weil das Sheet ein Matrix/Report-Layout hat
     try:
         raw = pd.read_excel(upload, sheet_name=0, header=None)
     except Exception as e:
-        st.error(f"❌ Abrechnung konnte nicht gelesen werden: {e}")
+        st.error(f"Abrechnung konnte nicht gelesen werden: {e}")
         st.stop()
 
-    # --- 1) Versuch: fixe Zeilen 125–136 auslesen ---
+    # -------- Helpers
+    def to_float(x):
+        s = str(x)
+        s = s.replace("€", "").replace("\u20ac", "")
+        s = s.replace("'", "")
+        s = s.replace("\xa0", "").replace(" ", "")
+        s = s.replace(",", ".")
+        try:
+            return float(s)
+        except:
+            try:
+                return float(s.replace(".", ""))
+            except:
+                return None
+
+    # -------- 1) Versuch: fixe Zeilen 125–136 auslesen (Kürzel + Einsatztage Abrechnung SOLL)
     try:
-        fixed_block = raw.iloc[124:136, [2, 5]].dropna(how="all")  # z.B. Spalte C (2) und F (5)
+        fixed_block = raw.iloc[124:136, [2, 4]].dropna(how="all")  # C= Kürzel, E = Einsatztage Abrechnung SOLL
         fixed_block.columns = ["Kürzel", "Einsatztage_SOLL"]
         fixed_block["Kürzel"] = fixed_block["Kürzel"].astype(str).str.strip()
         fixed_block["Einsatztage_SOLL"] = pd.to_numeric(
@@ -370,10 +386,10 @@ elif page == "💰 Abrechnungs-Vergleich":
     except Exception:
         fixed_block = pd.DataFrame(columns=["Kürzel", "Einsatztage_SOLL"])
 
-    # --- 2) Falls leer → GPT-Extraktion ---
+    # --- 2) Falls leer → GPT-Extraktion
     if fixed_block.empty:
         from utils.gpt import extrahiere_abrechnungsblock
-        st.info("🤖 Fester Block leer – GPT versucht, die Abrechnungs-Zusammenfassung zu erkennen...")
+        st.info("🤖 Fester Block leer – GPT versucht, die Einsatztage-Zusammenfassung zu erkennen...")
         try:
             fixed_block = extrahiere_abrechnungsblock(raw)
         except Exception as e:
@@ -381,10 +397,12 @@ elif page == "💰 Abrechnungs-Vergleich":
             st.stop()
 
     if fixed_block.empty:
-        st.error("❌ Keine Rechnungsstellungs-Zeilen gefunden (weder fix noch GPT).")
+        st.error("❌ Keine Einsatztage-Zeilen gefunden (weder fix noch GPT).")
         st.stop()
 
-    # --- 3) Zeitdaten extern (IST) ---
+    abr = fixed_block.groupby("Kürzel", as_index=False).sum(numeric_only=True)
+
+    # -------- 2) Zeitdaten-IST (extern) per Kürzel
     df_all = st.session_state.get("df")
     kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
 
@@ -408,8 +426,8 @@ elif page == "💰 Abrechnungs-Vergleich":
     ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # --- 4) Vergleich ---
-    merged = fixed_block.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
+    # -------- 3) Mergen & Anzeige
+    merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
     out = merged.copy()
@@ -426,8 +444,7 @@ elif page == "💰 Abrechnungs-Vergleich":
     )
 
     st.caption(
-        f"Logik: Versuch feste Zeilen 125–136 zu lesen. "
-        f"Falls leer → GPT-Extraktion. "
+        f"Fix: Zeilen 125–136 der Abrechnung werden genutzt (Spalte C = Kürzel, Spalte E = Einsatztage SOLL). "
         f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. "
         f"Diff_Tage = Tage_IST − Einsatztage_SOLL."
     )
