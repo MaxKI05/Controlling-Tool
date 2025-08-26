@@ -40,139 +40,62 @@ def _norm(s: str) -> str:
     """klein, Leerzeichen raus, nur Buchstaben."""
     return re.sub(r"[^a-z]", "", str(s).lower())
 
-def read_abrechnung_csv(uploaded_file) -> pd.DataFrame:
+def read_abrechnung_excel(upload) -> pd.DataFrame:
     """
-    Erwartet eine CSV mit zwei Spalten:
-      - Kürzel (Synonyme: kuerzel, PL, initials, code)
-      - Einsatztage_SOLL (Syn.: einsatztage, einsatztage abrechnung, einsatztage_soll, tage)
-    Erkennt ; , Tab, | sowie UTF-8-SIG / Latin-1 / CP1252.
-    """
-    # falls Streamlit-Upload: mehrfach lesen erlauben
-    raw = uploaded_file.getvalue() if hasattr(uploaded_file, "getvalue") else uploaded_file.read()
-    if not isinstance(raw, (bytes, bytearray)):
-        raise ValueError("Datei leer oder nicht lesbar.")
-
-    seps = [",", ";", "\t", "|"]
-    encs = ["utf-8-sig", "latin-1", "cp1252"]
-
-    for sep in seps:
-        for enc in encs:
-            bio = io.BytesIO(raw)  # frischer Stream für jeden Versuch
-            try:
-                df = pd.read_csv(bio, sep=sep, encoding=enc, engine="python")
-            except Exception:
-                continue
-            if df.empty:
-                continue
-
-            # Header normalisieren
-            cols = [str(c).strip() for c in df.columns]
-            df.columns = cols
-            norm2orig = {_norm(c): c for c in cols}
-
-            # Zielspalten suchen
-            want = {"kuerzel": ["kürzel", "kuerzel", "pl", "initials", "initialen", "code"],
-                    "tage": ["einsatztage_soll", "einsatztage abrechnung soll", "einsatztage abrechnung",
-                             "einsatztage", "tage", "einsatz_tage_soll"]}
-
-            found = {}
-
-            for target, cands in want.items():
-                for c in cands:
-                    key = _norm(c)
-                    if key in norm2orig:
-                        found[target] = norm2orig[key]
-                        break
-
-            if "kuerzel" in found and "tage" in found:
-                out = df[[found["kuerzel"], found["tage"]]].rename(
-                    columns={found["kuerzel"]: "Kürzel", found["tage"]: "Einsatztage_SOLL"}
-                )
-
-                # Zahlen robust parsen (1.234,56 / 1,234.56 / 1234,56 / 1234.56)
-                s = (out["Einsatztage_SOLL"].astype(str)
-                        .str.replace("\u00a0", "", regex=False)  # geschütztes Leerzeichen
-                        .str.replace("€", "", regex=False)
-                        .str.replace(" ", "", regex=False))
-                # wenn Komma UND Punkt vorhanden → Punkt ist Tausendertrenner
-                mask_both = s.str.contains(r"[.,]") & s.str.contains(r"\.")
-                s = s.where(~mask_both, s.str.replace(".", "", regex=False))
-                s = s.str.replace(",", ".", regex=False)
-
-                out["Einsatztage_SOLL"] = pd.to_numeric(s, errors="coerce").fillna(0.0)
-                out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
-                out = out[out["Kürzel"] != ""]
-                return out
-
-    raise ValueError("CSV konnte nicht gelesen werden: "
-                     "CSV braucht Spalten 'Kürzel' und 'Einsatztage_SOLL' (oder gängige Synonyme wie 'PL' bzw. 'Einsatztage').")
-
-def read_abrechnung_csv(upload) -> pd.DataFrame:
-    """
-    Liest eine CSV mit Abrechnungsdaten ein und liefert
+    Liest eine Excel-Datei mit Abrechnungsdaten ein und liefert
     DataFrame mit Spalten: ['Kürzel', 'Einsatztage_SOLL'].
-    - erkennt Encoding (utf-8-sig, utf-8, cp1252, latin-1)
-    - erkennt Trennzeichen (; , \t |)
-    - akzeptiert Spaltennamen-Varianten (kürzel/kuerzel/pl/code, einsatztage_soll/einsatztage/tage_soll/tage)
-    - konvertiert deutsch formatierte Zahlen zu float
+    
+    - akzeptiert unterschiedliche Spaltennamen (Kürzel/Code/PL, Einsatztage/Tage/SOLL)
+    - konvertiert deutsch formatierte Zahlen
+    - ignoriert leere oder formelbasierte Felder, wenn keine Werte vorliegen
     """
-    # Bytes holen
-    data = upload.getvalue()
 
-    # Encoding raten
-    text = None
-    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
-        try:
-            text = data.decode(enc)
-            break
-        except Exception:
-            pass
-    if text is None:
-        raise ValueError("CSV-Encoding unbekannt/inkompatibel.")
+    # Excel laden (Pandas nimmt openpyxl)
+    try:
+        df = pd.read_excel(upload, engine="openpyxl")
+    except Exception as e:
+        raise ValueError(f"Excel konnte nicht gelesen werden: {e}")
 
-    # Trenner raten
-    df = None
-    for sep in (";", ",", "\t", "|"):
-        try:
-            tmp = pd.read_csv(io.StringIO(text), sep=sep, decimal=",", thousands=".")
-            if tmp.shape[1] >= 2:
-                df = tmp
-                break
-        except Exception:
-            pass
-    if df is None:
-        raise ValueError("CSV konnte nicht gelesen werden (Trenner/Format).")
-
-    # Spalten vereinheitlichen
+    # Spalten normalisieren
     df.columns = df.columns.astype(str).str.strip().str.lower()
 
-    def pick(cands):
-        for c in cands:
-            if c in df.columns:
-                return c
-        return None
+    # Kürzel-Spalte finden
+    kuerzel_col = None
+    for c in ["kürzel", "kuerzel", "pl", "code", "mitarbeiter", "initialen"]:
+        if c in df.columns:
+            kuerzel_col = c
+            break
 
-    col_k = pick(["kürzel", "kuerzel", "pl", "code"])
-    col_t = pick(["einsatztage_soll", "einsatztage", "tage_soll", "tage"])
-    if not col_k or not col_t:
-        raise ValueError("CSV braucht Spalten 'Kürzel' und 'Einsatztage_SOLL' (oder Synonyme).")
+    # Tage/SOLL-Spalte finden
+    tage_col = None
+    for c in df.columns:
+        if "soll" in c or "tage" in c:
+            tage_col = c
+            break
 
-    out = df[[col_k, col_t]].rename(columns={col_k: "Kürzel", col_t: "Einsatztage_SOLL"}).copy()
+    if not kuerzel_col or not tage_col:
+        raise ValueError(f"Keine passenden Spalten gefunden. Gefunden: {list(df.columns)}")
+
+    out = df[[kuerzel_col, tage_col]].rename(
+        columns={kuerzel_col: "Kürzel", tage_col: "Einsatztage_SOLL"}
+    )
+
+    # Werte bereinigen
     out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
-
-    # Zahlformat säubern (deutsch)
     out["Einsatztage_SOLL"] = (
         out["Einsatztage_SOLL"]
         .astype(str)
-        .str.replace("€", "", regex=False)
-        .str.replace("\u00A0", "", regex=False)  # non-breaking space
-        .str.replace(" ", "", regex=False)
-        .str.replace(".", "", regex=False)       # Tausenderpunkt
-        .str.replace(",", ".", regex=False)      # Komma -> Punkt
+        .str.replace(r"[^0-9,.\-]", "", regex=True)   # nur Zahlenzeichen behalten
+        .str.replace(".", "", regex=False)            # Tausenderpunkte löschen
+        .str.replace(",", ".", regex=False)           # Komma → Punkt
     )
     out["Einsatztage_SOLL"] = pd.to_numeric(out["Einsatztage_SOLL"], errors="coerce").fillna(0.0)
+
+    # Nur Zeilen mit gültigem Kürzel behalten
     out = out[out["Kürzel"] != ""]
-    return out.groupby("Kürzel", as_index=False)["Einsatztage_SOLL"].sum()
+    out = out.groupby("Kürzel", as_index=False)["Einsatztage_SOLL"].sum()
+
+    return out
 
 
 def lade_mapping():
