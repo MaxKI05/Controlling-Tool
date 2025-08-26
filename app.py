@@ -13,7 +13,7 @@ from reportlab.platypus import Image as RLImage, SimpleDocTemplate, Spacer, Tabl
 # Layout & App-Setup
 # ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Zeitdatenanalyse Dashboard", page_icon="🧠", layout="wide")
-APP_VERSION = "v0.0.6"
+APP_VERSION = "v0.0.7"
 
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
@@ -194,49 +194,112 @@ elif page == "📁 Daten hochladen":
     for f in upload_files:
         with open(os.path.join("history/uploads", f), "rb") as file:
             st.download_button(label=f"📄 {f}", data=file.read(), file_name=f)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ZWECK-KATEGORISIERUNG – inkl. Kürzelpflege
-# ──────────────────────────────────────────────────────────────────────────────
+            
 elif page == "🧠 Zweck-Kategorisierung":
     st.title("🧠 Zweck-Kategorisierung & Mapping")
-    mapping_df = get_state_df("mapping_df", lade_mapping)
-    kuerzel_df = get_state_df("kuerzel_map", lade_kuerzel)
 
-    # Zweck-Mapping
-    st.subheader("📋 Aktuelles Zweck-Mapping (persistiert)")
-    edited_mapping = st.data_editor(
-        mapping_df.sort_values("Zweck"),
-        num_rows="dynamic",
-        use_container_width=True,
-        key="mapping_editor",
-    )
-    if st.button("💾 Mapping speichern"):
-        st.session_state["mapping_df"] = edited_mapping.copy()
-        speichere_mapping(st.session_state["mapping_df"])
-        st.success("✅ Mapping gespeichert.")
+    if df is None or "Zweck" not in df.columns:
+        st.warning("⚠️ Bitte zuerst eine Excel-Datei hochladen.")
+    else:
+        # ---------- 1) Automatisches GPT-Mapping NUR für neue Zwecke ----------
+        # Aktuelle & bekannte Zwecke robust ermitteln
+        mapping_df = st.session_state.get("mapping_df", lade_mapping())
+        aktuelle_zwecke = set(
+            df["Zweck"].dropna().astype(str).str.strip()
+        )
+        bekannte_zwecke = set()
+        if not mapping_df.empty and "Zweck" in mapping_df.columns:
+            bekannte_zwecke = set(mapping_df["Zweck"].dropna().astype(str).str.strip())
 
-    # Kürzel-Mapping
-    st.markdown("---")
-    st.subheader("👥 Mitarbeiter-Kürzel (persistiert)")
-    edited_kuerzel = st.data_editor(
-        kuerzel_df.sort_values("Name"),
-        num_rows="dynamic",
-        use_container_width=True,
-        key="kuerzel_editor",
-        column_config={
-            "Name": st.column_config.TextColumn("Name", disabled=True),
-            "Kürzel": st.column_config.TextColumn("Kürzel"),
-        },
-    )
-    if st.button("💾 Kürzel speichern"):
-        updated = edited_kuerzel[["Name", "Kürzel"]].copy()
-        base = get_state_df("kuerzel_map", lade_kuerzel).copy()
-        base = base.drop(columns=["Kürzel"], errors="ignore").merge(updated, on="Name", how="left")
-        base["Kürzel"] = base["Kürzel"].fillna("")
-        st.session_state["kuerzel_map"] = base.drop_duplicates(subset=["Name"])
-        speichere_kuerzel(st.session_state["kuerzel_map"])
-        st.success("✅ Kürzel gespeichert.")
+        neue_zwecke = sorted(aktuelle_zwecke - bekannte_zwecke)
+
+        st.markdown(f"🔍 Neue Zwecke im aktuellen Datensatz: **{len(neue_zwecke)}**")
+
+        if neue_zwecke:
+            try:
+                from utils.gpt import klassifiziere_verrechenbarkeit
+                neue_mapping = []
+                with st.spinner(f"🧠 {len(neue_zwecke)} neue Zwecke – KI klassifiziert..."):
+                    for zweck in neue_zwecke:
+                        kat = klassifiziere_verrechenbarkeit(zweck)  # erwartetes Ergebnis: "Intern" oder "Extern"
+                        # Falls die KI etwas Unerwartetes zurückgibt, leer lassen -> manuell nachpflegen
+                        if kat not in ("Intern", "Extern"):
+                            kat = None
+                        neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
+
+                if neue_mapping:
+                    new_df = pd.DataFrame(neue_mapping)
+                    mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
+                    mapping_df.drop_duplicates(subset=["Zweck"], keep="last", inplace=True)
+                    st.session_state["mapping_df"] = mapping_df
+                    speichere_mapping(mapping_df)
+                    st.success("✅ Neues Mapping gespeichert.")
+            except Exception as e:
+                st.warning("⚠️ KI-Mapping konnte nicht automatisch durchgeführt werden. Bitte manuell nachpflegen.")
+                # kein st.stop(); wir erlauben manuelle Bearbeitung
+
+        # ---------- 2) Mapping anwenden (merge) ----------
+        df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
+        df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
+        st.session_state["df"] = df
+
+        # ---------- 3) Tabs: aktuelles Mapping & manuell bearbeiten ----------
+        tab1, tab2, tab3 = st.tabs(["📋 Aktuelles Mapping", "✍️ Manuell bearbeiten", "👥 Mitarbeiter-Kürzel"])
+
+        with tab1:
+            st.caption("Übersicht aller bekannten Zweck→Verrechenbarkeit-Zuordnungen.")
+            show_map = st.session_state["mapping_df"].copy()
+            if not show_map.empty:
+                show_map = show_map.sort_values("Zweck")
+            st.dataframe(show_map, use_container_width=True)
+
+        with tab2:
+            st.caption("Manuelle Korrektur/Ergänzung des Zweck-Mappings.")
+            edited_df = st.data_editor(
+                st.session_state["mapping_df"],
+                num_rows="dynamic",
+                use_container_width=True,
+                key="mapping_editor"
+            )
+            if st.button("💾 Änderungen speichern", key="save_purpose_mapping"):
+                # Persistenz + erneutes Anwenden
+                edited_df.drop_duplicates(subset=["Zweck"], keep="last", inplace=True)
+                st.session_state["mapping_df"] = edited_df
+                speichere_mapping(edited_df)
+
+                df_tmp = st.session_state["df"].drop(columns=["Verrechenbarkeit"], errors="ignore")
+                df_tmp = df_tmp.merge(edited_df, on="Zweck", how="left")
+                st.session_state["df"] = df_tmp
+
+                st.success("✅ Mapping gespeichert & angewendet.")
+
+        # ---------- 4) Mitarbeiter-Kürzel direkt hier pflegen (Session-Only, keine CSV) ----------
+        with tab3:
+            st.caption("Trage hier manuell die Kürzel zu den Mitarbeitenden ein. Diese werden im Abrechnungs-Vergleich verwendet.")
+            # Basis: alle Namen aus den Zeitdaten
+            alle_namen = sorted(set(df["Mitarbeiter"].dropna().astype(str)))
+
+            # Bisheriges Mapping aus Session laden (falls vorhanden)
+            existing = st.session_state.get("kuerzel_map")
+            if existing is None or existing.empty or "Name" not in existing.columns or "Kürzel" not in existing.columns:
+                kuerzel_df = pd.DataFrame({"Name": alle_namen, "Kürzel": [""] * len(alle_namen)})
+            else:
+                # Union aus vorhandenen Namen + neuen Namen, Kürzel wenn vorhanden beibehalten
+                kuerzel_df = pd.DataFrame({"Name": alle_namen})
+                kuerzel_df = kuerzel_df.merge(existing[["Name", "Kürzel"]], on="Name", how="left").fillna({"Kürzel": ""})
+
+            edited_kuerzel_df = st.data_editor(
+                kuerzel_df,
+                key="kuerzel_editor",
+                use_container_width=True,
+                num_rows="dynamic"
+            )
+            if st.button("💾 Kürzel speichern", key="save_initials"):
+                # nur eindeutige Namen, leere Kürzel erlaubt (dann werden diese Personen im Vergleich ignoriert)
+                edited_kuerzel_df.drop_duplicates(subset=["Name"], keep="last", inplace=True)
+                st.session_state["kuerzel_map"] = edited_kuerzel_df
+                st.success("✅ Kürzel wurden gespeichert.")
+
 
 
 elif page == "📊 Analyse & Visualisierung":
