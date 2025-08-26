@@ -39,28 +39,30 @@ import re
 def _norm(s: str) -> str:
     """klein, Leerzeichen raus, nur Buchstaben."""
     return re.sub(r"[^a-z]", "", str(s).lower())
-
 def read_abrechnung(upload) -> pd.DataFrame:
     """
-    Liest Abrechnungsdatei (CSV oder XLSX), sucht Kürzel & Einsatztage_SOLL
+    Liest Abrechnungsdatei (CSV oder XLSX), sucht Kürzel & Einsatztage_SOLL.
+    Kopfzeile ab Zeile 7 wird berücksichtigt.
     """
     import os
     ext = os.path.splitext(upload.name)[-1].lower()
 
-    if ext == ".csv":
-        # CSV – Header ist in Zeile 7
-        df = pd.read_csv(upload, sep=";", header=7, engine="python", encoding="utf-8")
-    else:
-        # XLSX – auch hier Header evtl. in Zeile 7
-        df = pd.read_excel(upload, engine="openpyxl", header=7)
+    try:
+        if ext == ".csv":
+            df = pd.read_csv(upload, sep=";", header=7, engine="python", encoding="utf-8")
+        else:
+            df = pd.read_excel(upload, engine="openpyxl", header=7)
+    except Exception as e:
+        raise ValueError(f"Datei konnte nicht eingelesen werden: {e}")
 
     # Spalten normalisieren
     df.columns = df.columns.astype(str).str.strip().str.lower()
 
-    # Kürzel-Spalte
+    # Kürzel-Spalte finden
     kuerzel_col = next((c for c in df.columns if c in ["pl", "kürzel", "kuerzel", "code"]), None)
-    # Solltage-Spalte
-    tage_col = next((c for c in df.columns if "soll" in c and "einsatztage" in c), None)
+
+    # Tage-Spalte finden (jetzt flexibler!)
+    tage_col = next((c for c in df.columns if "einsatztage" in c), None)
 
     if not kuerzel_col or not tage_col:
         raise ValueError(f"Keine passenden Spalten gefunden. Gefunden: {list(df.columns)}")
@@ -69,13 +71,13 @@ def read_abrechnung(upload) -> pd.DataFrame:
         columns={kuerzel_col: "Kürzel", tage_col: "Einsatztage_SOLL"}
     )
 
-    # Zahlen sauber konvertieren
+    # Zahlen robust konvertieren
     out["Einsatztage_SOLL"] = (
         out["Einsatztage_SOLL"]
         .astype(str)
         .str.replace(r"[^0-9,.\-]", "", regex=True)
-        .str.replace(".", "", regex=False)   # Tausenderpunkt raus
-        .str.replace(",", ".", regex=False)  # Komma -> Punkt
+        .str.replace(".", "", regex=False)
+        .str.replace(",", ".", regex=False)
     )
     out["Einsatztage_SOLL"] = pd.to_numeric(out["Einsatztage_SOLL"], errors="coerce").fillna(0.0)
     out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
