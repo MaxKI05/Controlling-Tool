@@ -197,7 +197,7 @@ elif page == "📁 Daten hochladen":
             
 elif page == "🧠 Zweck-Kategorisierung":
     st.title("🧠 Zweck-Kategorisierung & Mapping")
-
+    df = st.session_state.get("df")
     if df is None or "Zweck" not in df.columns:
         st.warning("⚠️ Bitte zuerst eine Excel-Datei hochladen.")
     else:
