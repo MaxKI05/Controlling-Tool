@@ -1,5 +1,7 @@
 import os
 import re
+import io
+from pathlib import Path
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -30,6 +32,74 @@ def extrahiere_zweck(text: str):
         zweck_raw = text.split("-")[-1].strip()
         return re.sub(r"^\d+_?", "", zweck_raw)
     return None
+
+def read_abrechnung_csv(upload) -> pd.DataFrame:
+    """
+    Liest eine CSV mit Abrechnungsdaten ein und liefert
+    DataFrame mit Spalten: ['Kürzel', 'Einsatztage_SOLL'].
+    - erkennt Encoding (utf-8-sig, utf-8, cp1252, latin-1)
+    - erkennt Trennzeichen (; , \t |)
+    - akzeptiert Spaltennamen-Varianten (kürzel/kuerzel/pl/code, einsatztage_soll/einsatztage/tage_soll/tage)
+    - konvertiert deutsch formatierte Zahlen zu float
+    """
+    # Bytes holen
+    data = upload.getvalue()
+
+    # Encoding raten
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            text = data.decode(enc)
+            break
+        except Exception:
+            pass
+    if text is None:
+        raise ValueError("CSV-Encoding unbekannt/inkompatibel.")
+
+    # Trenner raten
+    df = None
+    for sep in (";", ",", "\t", "|"):
+        try:
+            tmp = pd.read_csv(io.StringIO(text), sep=sep, decimal=",", thousands=".")
+            if tmp.shape[1] >= 2:
+                df = tmp
+                break
+        except Exception:
+            pass
+    if df is None:
+        raise ValueError("CSV konnte nicht gelesen werden (Trenner/Format).")
+
+    # Spalten vereinheitlichen
+    df.columns = df.columns.astype(str).str.strip().str.lower()
+
+    def pick(cands):
+        for c in cands:
+            if c in df.columns:
+                return c
+        return None
+
+    col_k = pick(["kürzel", "kuerzel", "pl", "code"])
+    col_t = pick(["einsatztage_soll", "einsatztage", "tage_soll", "tage"])
+    if not col_k or not col_t:
+        raise ValueError("CSV braucht Spalten 'Kürzel' und 'Einsatztage_SOLL' (oder Synonyme).")
+
+    out = df[[col_k, col_t]].rename(columns={col_k: "Kürzel", col_t: "Einsatztage_SOLL"}).copy()
+    out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
+
+    # Zahlformat säubern (deutsch)
+    out["Einsatztage_SOLL"] = (
+        out["Einsatztage_SOLL"]
+        .astype(str)
+        .str.replace("€", "", regex=False)
+        .str.replace("\u00A0", "", regex=False)  # non-breaking space
+        .str.replace(" ", "", regex=False)
+        .str.replace(".", "", regex=False)       # Tausenderpunkt
+        .str.replace(",", ".", regex=False)      # Komma -> Punkt
+    )
+    out["Einsatztage_SOLL"] = pd.to_numeric(out["Einsatztage_SOLL"], errors="coerce").fillna(0.0)
+    out = out[out["Kürzel"] != ""]
+    return out.groupby("Kürzel", as_index=False)["Einsatztage_SOLL"].sum()
+
 
 def lade_mapping():
     if os.path.exists("mapping.csv"):
@@ -342,142 +412,92 @@ elif page == "📊 Analyse & Visualisierung":
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
-    # 1) Parameter
+    # Stunden -> Tage
     std_pro_tag = st.number_input(
         "Arbeitsstunden pro Tag (für Umrechnung Stunden → Tage)",
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
     )
 
-    upload = st.file_uploader("Lade eine Abrechnungs-Excel hoch", type=["xlsx"])
+    # CSV **und** XLSX zulassen
+    upload = st.file_uploader("Lade eine Abrechnungs-Datei hoch", type=["xlsx", "csv"])
     if not upload:
         st.stop()
 
-    # ---------- Excel als Werte laden (Formelergebnisse) ----------
-    try:
-        import openpyxl
-    except Exception:
-        st.error("openpyxl fehlt. Bitte `openpyxl` in requirements.txt eintragen.")
-        st.stop()
+    abr = None
+    ext = Path(upload.name).suffix.lower()
 
-    try:
-        wb = openpyxl.load_workbook(upload, data_only=True)
-    except Exception as e:
-        st.error(f"Abrechnung konnte nicht gelesen werden: {e}")
-        st.stop()
-
-    sheetnames = wb.sheetnames
-    sheet_name = st.selectbox("Sheet/Monat auswählen", sheetnames, index=len(sheetnames)-1 if sheetnames else 0)
-    ws = wb[sheet_name]
-
-    # Hilfen
-    import string
-    def col_idx_to_letter(idx: int) -> str:
-        # 0-basiert → A, B, ..., Z, AA, AB, ...
-        idx += 1
-        letters = ""
-        while idx > 0:
-            idx, rem = divmod(idx - 1, 26)
-            letters = chr(65 + rem) + letters
-        return letters
-
-    def parse_eu_number(x):
-        if x is None:
-            return None
-        s = str(x).strip()
-        if not s:
-            return None
-        s = s.replace("€", "").replace("\u20ac", "").replace("\xa0", "").replace(" ", "")
-        if "." in s and "," in s:
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", ".")
+    # --- 1) CSV direkt einlesen ---
+    if ext == ".csv":
         try:
-            return float(s)
-        except:
-            return None
+            abr = read_abrechnung_csv(upload)  # -> ['Kürzel', 'Einsatztage_SOLL']
+            st.success(f"CSV erkannt: {len(abr)} Kürzel mit 'Einsatztage_SOLL'.")
+        except Exception as e:
+            st.error(f"CSV konnte nicht gelesen werden: {e}")
+            st.stop()
 
-    # ---------- komplette Tabelle als DataFrame bauen ----------
-    data = []
-    max_cols = 0
-    for row in ws.iter_rows(values_only=True):
-        row_vals = list(row)
-        max_cols = max(max_cols, len(row_vals))
-        data.append(row_vals)
+    # --- 2) Excel: interaktive Auswahl (Baukasten) ---
+    else:
+        raw = pd.read_excel(upload, header=None)
+        st.caption("Vorschau (meist steht die Zusammenfassung unten):")
+        st.dataframe(raw.tail(200), use_container_width=True, height=300)
 
-    # Spaltennamen A, B, C, ... generieren
-    cols = [col_idx_to_letter(i) for i in range(max_cols)]
-    raw_df = pd.DataFrame(data, columns=cols)
+        use_header = st.checkbox("Eine Zeile als Kopfzeile verwenden", value=False)
+        if use_header:
+            header_row = st.number_input("Kopfzeile (1-basiert)", min_value=1, max_value=len(raw), value=max(1, len(raw)-199))
+            df_view = pd.read_excel(upload, header=header_row-1)
+            st.dataframe(df_view.tail(200), use_container_width=True, height=300)
+        else:
+            df_view = raw
 
-    st.markdown("### 🧱 Tabellenvorschau (ausgewähltes Sheet)")
-    st.caption("Tipp: Scrolle nach unten – die Zusammenfassung steht meist im unteren Bereich.")
-    st.dataframe(raw_df.tail(200), use_container_width=True)
+        # Zeilenbereich begrenzen
+        start, end = st.slider(
+            "Zeilenbereich (1-basiert, inkl.)", 
+            min_value=1, max_value=len(df_view),
+            value=(max(1, len(df_view)-200+1), len(df_view))
+        )
+        sample = df_view.iloc[start-1:end].reset_index(drop=True)
 
-    # ---------- Baukasten: Header-Handling & Auswahl ----------
-    st.markdown("### 🔧 Spalten- & Zeilenauswahl")
-    use_header = st.checkbox("Eine Zeile als Kopfzeile verwenden", value=False)
-    header_row = None
-    df_for_pick = raw_df.copy()
+        st.markdown("### 🔧 Spalten auswählen")
+        col_k = st.selectbox(
+            "Spalte für **Kürzel**",
+            options=list(sample.columns),
+            index=0,
+            format_func=lambda c: f"{c}"
+        )
+        col_t = st.selectbox(
+            "Spalte für **Einsatztage_SOLL**",
+            options=list(sample.columns),
+            index=1 if len(sample.columns) > 1 else 0,
+            format_func=lambda c: f"{c}"
+        )
 
-    if use_header:
-        header_row = st.number_input("Kopfzeile (1-basiert)", min_value=1, max_value=len(raw_df), value=max(1, len(raw_df)-30))
-        # Kopf übernehmen
-        header_vals = raw_df.iloc[int(header_row)-1].fillna("").astype(str).str.strip().tolist()
-        # leere Header durch Spaltenbuchstaben ersetzen, Duplikate vermeiden
-        clean_cols = []
-        seen = set()
-        for i, h in enumerate(header_vals):
-            if not h:
-                h = cols[i]
-            base = h
-            k = 1
-            while h in seen:
-                k += 1
-                h = f"{base}_{k}"
-            seen.add(h)
-            clean_cols.append(h)
-        df_for_pick = raw_df.iloc[int(header_row):].reset_index(drop=True)
-        df_for_pick.columns = clean_cols
+        if not st.button("Auswahl übernehmen"):
+            st.info("Bereich & Spalten wählen und dann **Auswahl übernehmen** klicken.")
+            st.stop()
 
-    # Nutzer wählt Zeilenbereich
-    total_rows = len(df_for_pick)
-    default_start = max(1, total_rows - 15)
-    row_range = st.slider("Zeilenbereich (1-basiert, nach evtl. Kopfzeile)", 1, max(1, total_rows), (default_start, total_rows))
-    r_start, r_end = int(row_range[0]), int(row_range[1])
-    df_slice = df_for_pick.iloc[r_start-1:r_end].copy()
+        abr = sample[[col_k, col_t]].rename(columns={col_k: "Kürzel", col_t: "Einsatztage_SOLL"}).copy()
+        abr["Kürzel"] = abr["Kürzel"].astype(str).str.strip()
+        abr["Einsatztage_SOLL"] = (
+            abr["Einsatztage_SOLL"].astype(str)
+            .str.replace("€", "", regex=False)
+            .str.replace("\u00A0", "", regex=False)
+            .str.replace(" ", "", regex=False)
+            .str.replace(".", "", regex=False)
+            .str.replace(",", ".", regex=False)
+        )
+        abr["Einsatztage_SOLL"] = pd.to_numeric(abr["Einsatztage_SOLL"], errors="coerce")
+        abr = abr.dropna(subset=["Kürzel", "Einsatztage_SOLL"])
+        abr = abr.groupby("Kürzel", as_index=False)["Einsatztage_SOLL"].sum()
 
-    # Spaltenauswahl
-    kuerzel_col = st.selectbox("Spalte für Kürzel wählen", list(df_slice.columns))
-    soll_col    = st.selectbox("Spalte für Einsatztage Abrechnung SOLL wählen", list(df_slice.columns))
-
-    st.markdown("#### 👀 Auswahl-Vorschau")
-    preview = df_slice[[kuerzel_col, soll_col]].head(20)
-    st.dataframe(preview, use_container_width=True)
-
-    # ---------- Extrahieren & Bereinigen ----------
-    abr_records = []
-    for _, row in df_slice.iterrows():
-        code = str(row.get(kuerzel_col, "")).strip()
-        val  = parse_eu_number(row.get(soll_col))
-        if code and val is not None:
-            abr_records.append({"Kürzel": code, "Einsatztage_SOLL": val})
-    abr = pd.DataFrame(abr_records)
-
-    if abr.empty:
-        st.error("❌ Keine Einsatztage-Zeilen im gewählten Bereich/Spalten gefunden.")
-        st.stop()
-
-    st.success(f"✅ {len(abr)} Zeilen aus dem Bereich extrahiert.")
-    st.dataframe(abr, use_container_width=True)
-
-    # ---------- Zeitdaten-IST aus Session (extern) ----------
+    # --- 3) IST aus Zeitdaten (extern) nach Kürzel ---
     df_all = st.session_state.get("df")
-    kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
-
     if not isinstance(df_all, pd.DataFrame) or df_all.empty:
         st.warning("⚠️ Keine Zeitdaten geladen (Seite '📁 Daten hochladen').")
         st.stop()
+
+    kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
     if kuerzel_map.empty or not set(["Name", "Kürzel"]).issubset(kuerzel_map.columns):
-        st.warning("⚠️ Kein gültiges Kürzel-Mapping gefunden. Bitte in '🧠 Zweck-Kategorisierung' pflegen.")
+        st.warning("⚠️ Kein gültiges Kürzel-Mapping (Tab '🧠 Zweck-Kategorisierung' → 'Mitarbeiter-Kürzel').")
         st.stop()
 
     df_ext = df_all[df_all.get("Verrechenbarkeit").isin(["Extern"])].copy()
@@ -485,43 +505,27 @@ elif page == "💰 Abrechnungs-Vergleich":
         st.info("Keine externen Zeitdaten vorhanden.")
         st.stop()
 
-    df_ext_group = (
+    ist = (
         df_ext.groupby("Mitarbeiter", as_index=False)["Dauer"]
-              .sum()
-              .rename(columns={"Dauer": "Externe_Stunden"})
+        .sum()
+        .rename(columns={"Dauer": "Externe_Stunden"})
+        .merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
+        .dropna(subset=["Kürzel"])
     )
-    df_ext_map = (
-        df_ext_group.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
-                    .dropna(subset=["Kürzel"])
-    )
-    df_ext_map["Kürzel"] = df_ext_map["Kürzel"].astype(str).str.strip()
-    ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
+    ist["Kürzel"] = ist["Kürzel"].astype(str).str.strip()
+    ist_by_k = ist.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # ---------- Mergen & Ausgabe ----------
-    merged = abr.groupby("Kürzel", as_index=False).sum(numeric_only=True).merge(
-        ist_by_k, on="Kürzel", how="outer"
-    ).fillna(0)
+    # --- 4) Merge & Anzeige ---
+    merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
-    out = merged.copy()
-    if "Externe_Stunden" in out:
-        out["Externe_Stunden"] = out["Externe_Stunden"].round(2)
-    out["Tage_IST"] = out["Tage_IST"].round(2)
-    out["Einsatztage_SOLL"] = out["Einsatztage_SOLL"].round(2)
-    out["Diff_Tage"] = out["Diff_Tage"].round(2)
+    show = merged[["Kürzel", "Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]].copy()
+    for c in ["Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]:
+        show[c] = pd.to_numeric(show[c], errors="coerce").fillna(0).round(2)
 
     st.subheader("📊 Vergleichstabelle")
-    st.dataframe(
-        out[["Kürzel", "Externe_Stunden", "Tage_IST", "Einsatztage_SOLL", "Diff_Tage"]]
-          .sort_values("Kürzel"),
-        use_container_width=True
-    )
-
-    st.caption(
-        f"Quelle: Sheet **{sheet_name}**, Zeilen {r_start}–{r_end}, Spalten **{kuerzel_col}** (Kürzel) und **{soll_col}** (Einsatztage_SOLL). "
-        f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. Diff_Tage = Tage_IST − Einsatztage_SOLL."
-    )
+    st.dataframe(show.sort_values("Kürzel"), use_container_width=True)
 
 
 elif page == "📤 Export":
