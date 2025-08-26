@@ -32,6 +32,80 @@ def extrahiere_zweck(text: str):
         zweck_raw = text.split("-")[-1].strip()
         return re.sub(r"^\d+_?", "", zweck_raw)
     return None
+# --- CSV robust lesen: erkennt Spaltennamen & Zahlformate ---
+import io
+import re
+
+def _norm(s: str) -> str:
+    """klein, Leerzeichen raus, nur Buchstaben."""
+    return re.sub(r"[^a-z]", "", str(s).lower())
+
+def read_abrechnung_csv(uploaded_file) -> pd.DataFrame:
+    """
+    Erwartet eine CSV mit zwei Spalten:
+      - Kürzel (Synonyme: kuerzel, PL, initials, code)
+      - Einsatztage_SOLL (Syn.: einsatztage, einsatztage abrechnung, einsatztage_soll, tage)
+    Erkennt ; , Tab, | sowie UTF-8-SIG / Latin-1 / CP1252.
+    """
+    # falls Streamlit-Upload: mehrfach lesen erlauben
+    raw = uploaded_file.getvalue() if hasattr(uploaded_file, "getvalue") else uploaded_file.read()
+    if not isinstance(raw, (bytes, bytearray)):
+        raise ValueError("Datei leer oder nicht lesbar.")
+
+    seps = [",", ";", "\t", "|"]
+    encs = ["utf-8-sig", "latin-1", "cp1252"]
+
+    for sep in seps:
+        for enc in encs:
+            bio = io.BytesIO(raw)  # frischer Stream für jeden Versuch
+            try:
+                df = pd.read_csv(bio, sep=sep, encoding=enc, engine="python")
+            except Exception:
+                continue
+            if df.empty:
+                continue
+
+            # Header normalisieren
+            cols = [str(c).strip() for c in df.columns]
+            df.columns = cols
+            norm2orig = {_norm(c): c for c in cols}
+
+            # Zielspalten suchen
+            want = {"kuerzel": ["kürzel", "kuerzel", "pl", "initials", "initialen", "code"],
+                    "tage": ["einsatztage_soll", "einsatztage abrechnung soll", "einsatztage abrechnung",
+                             "einsatztage", "tage", "einsatz_tage_soll"]}
+
+            found = {}
+
+            for target, cands in want.items():
+                for c in cands:
+                    key = _norm(c)
+                    if key in norm2orig:
+                        found[target] = norm2orig[key]
+                        break
+
+            if "kuerzel" in found and "tage" in found:
+                out = df[[found["kuerzel"], found["tage"]]].rename(
+                    columns={found["kuerzel"]: "Kürzel", found["tage"]: "Einsatztage_SOLL"}
+                )
+
+                # Zahlen robust parsen (1.234,56 / 1,234.56 / 1234,56 / 1234.56)
+                s = (out["Einsatztage_SOLL"].astype(str)
+                        .str.replace("\u00a0", "", regex=False)  # geschütztes Leerzeichen
+                        .str.replace("€", "", regex=False)
+                        .str.replace(" ", "", regex=False))
+                # wenn Komma UND Punkt vorhanden → Punkt ist Tausendertrenner
+                mask_both = s.str.contains(r"[.,]") & s.str.contains(r"\.")
+                s = s.where(~mask_both, s.str.replace(".", "", regex=False))
+                s = s.str.replace(",", ".", regex=False)
+
+                out["Einsatztage_SOLL"] = pd.to_numeric(s, errors="coerce").fillna(0.0)
+                out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
+                out = out[out["Kürzel"] != ""]
+                return out
+
+    raise ValueError("CSV konnte nicht gelesen werden: "
+                     "CSV braucht Spalten 'Kürzel' und 'Einsatztage_SOLL' (oder gängige Synonyme wie 'PL' bzw. 'Einsatztage').")
 
 def read_abrechnung_csv(upload) -> pd.DataFrame:
     """
