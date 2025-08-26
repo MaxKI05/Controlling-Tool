@@ -342,7 +342,6 @@ elif page == "📊 Analyse & Visualisierung":
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
 
-    # Umrechnung Stunden -> Tage (IST-Seite)
     std_pro_tag = st.number_input(
         "Arbeitsstunden pro Tag (für Umrechnung Stunden → Tage)",
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
@@ -352,42 +351,40 @@ elif page == "💰 Abrechnungs-Vergleich":
     if not upload:
         st.stop()
 
-    # --- Roh einlesen (ohne Header)
+    # Roh laden (ohne Header, wir brauchen die Matrix)
     try:
         raw = pd.read_excel(upload, sheet_name=0, header=None)
     except Exception as e:
-        st.error(f"Abrechnung konnte nicht gelesen werden: {e}")
+        st.error(f"❌ Abrechnung konnte nicht gelesen werden: {e}")
         st.stop()
 
-    # -------- Helper zum Bereinigen von Zahlen
-    def to_float(x):
-        if pd.isna(x):
-            return 0.0
-        s = str(x)
-        s = s.replace("€", "").replace("\u20ac", "")
-        s = s.replace("'", "")
-        s = s.replace("\xa0", "").replace(" ", "")
-        s = s.replace(",", ".")
-        try:
-            return float(s)
-        except:
-            return 0.0
-
-    # -------- Fix: Zeilen 125–136 nutzen (Index 124–135 in Pandas)
+    # --- 1) Versuch: fixe Zeilen 125–136 auslesen ---
     try:
-        abr = pd.DataFrame({
-            "Kürzel": raw.iloc[124:136, 2].astype(str).str.strip(),     # Spalte C (Index 2)
-            "Einsatztage_SOLL": raw.iloc[124:136, 3].apply(to_float)   # Spalte D (Index 3)
-        })
-    except Exception as e:
-        st.error(f"Fehler beim Extrahieren der Soll-Einsatztage: {e}")
+        fixed_block = raw.iloc[124:136, [2, 5]].dropna(how="all")  # z.B. Spalte C (2) und F (5)
+        fixed_block.columns = ["Kürzel", "Einsatztage_SOLL"]
+        fixed_block["Kürzel"] = fixed_block["Kürzel"].astype(str).str.strip()
+        fixed_block["Einsatztage_SOLL"] = pd.to_numeric(
+            fixed_block["Einsatztage_SOLL"], errors="coerce"
+        )
+        fixed_block = fixed_block.dropna(subset=["Kürzel", "Einsatztage_SOLL"])
+    except Exception:
+        fixed_block = pd.DataFrame(columns=["Kürzel", "Einsatztage_SOLL"])
+
+    # --- 2) Falls leer → GPT-Extraktion ---
+    if fixed_block.empty:
+        from utils.gpt import extrahiere_abrechnungsblock
+        st.info("🤖 Fester Block leer – GPT versucht, die Abrechnungs-Zusammenfassung zu erkennen...")
+        try:
+            fixed_block = extrahiere_abrechnungsblock(raw)
+        except Exception as e:
+            st.error(f"❌ GPT-Extraktion fehlgeschlagen: {e}")
+            st.stop()
+
+    if fixed_block.empty:
+        st.error("❌ Keine Rechnungsstellungs-Zeilen gefunden (weder fix noch GPT).")
         st.stop()
 
-    abr = abr.dropna(subset=["Kürzel"])
-    abr["Kürzel"] = abr["Kürzel"].astype(str).str.strip()
-    abr["Einsatztage_SOLL"] = abr["Einsatztage_SOLL"].fillna(0.0)
-
-    # -------- Zeitdaten-IST (extern) per Kürzel
+    # --- 3) Zeitdaten extern (IST) ---
     df_all = st.session_state.get("df")
     kuerzel_map = st.session_state.get("kuerzel_map", pd.DataFrame())
 
@@ -403,11 +400,7 @@ elif page == "💰 Abrechnungs-Vergleich":
         st.info("Keine externen Zeitdaten vorhanden.")
         st.stop()
 
-    df_ext_group = (
-        df_ext.groupby("Mitarbeiter", as_index=False)["Dauer"]
-        .sum()
-        .rename(columns={"Dauer": "Externe_Stunden"})
-    )
+    df_ext_group = df_ext.groupby("Mitarbeiter", as_index=False)["Dauer"].sum().rename(columns={"Dauer": "Externe_Stunden"})
     df_ext_map = df_ext_group.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
     df_ext_map = df_ext_map.dropna(subset=["Kürzel"])
     df_ext_map["Kürzel"] = df_ext_map["Kürzel"].astype(str).str.strip()
@@ -415,12 +408,13 @@ elif page == "💰 Abrechnungs-Vergleich":
     ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # -------- Mergen & Anzeige
-    merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
+    # --- 4) Vergleich ---
+    merged = fixed_block.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
     out = merged.copy()
-    out["Externe_Stunden"] = out["Externe_Stunden"].round(2)
+    if "Externe_Stunden" in out:
+        out["Externe_Stunden"] = out["Externe_Stunden"].round(2)
     out["Tage_IST"] = out["Tage_IST"].round(2)
     out["Einsatztage_SOLL"] = out["Einsatztage_SOLL"].round(2)
     out["Diff_Tage"] = out["Diff_Tage"].round(2)
@@ -432,11 +426,11 @@ elif page == "💰 Abrechnungs-Vergleich":
     )
 
     st.caption(
-        "Fix: Zeilen 125–136 der Abrechnung werden genutzt. "
-        "Zeitdaten extern → Externe_Stunden ÷ Arbeitsstunden/Tag = Tage_IST. "
-        "Diff_Tage = Tage_IST − Einsatztage_SOLL."
+        f"Logik: Versuch feste Zeilen 125–136 zu lesen. "
+        f"Falls leer → GPT-Extraktion. "
+        f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. "
+        f"Diff_Tage = Tage_IST − Einsatztage_SOLL."
     )
-
 
 
 elif page == "📤 Export":
