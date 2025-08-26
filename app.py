@@ -15,7 +15,7 @@ from reportlab.platypus import Image as RLImage, SimpleDocTemplate, Spacer, Tabl
 # Layout & App-Setup
 # ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Zeitdatenanalyse Dashboard", page_icon="🧠", layout="wide")
-APP_VERSION = "v0.1.1"
+APP_VERSION = "v0.1.2"
 
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
@@ -40,38 +40,27 @@ def _norm(s: str) -> str:
     """klein, Leerzeichen raus, nur Buchstaben."""
     return re.sub(r"[^a-z]", "", str(s).lower())
 
-def read_abrechnung_excel(upload) -> pd.DataFrame:
+def read_abrechnung(upload) -> pd.DataFrame:
     """
-    Liest eine Excel-Datei mit Abrechnungsdaten ein und liefert
-    DataFrame mit Spalten: ['Kürzel', 'Einsatztage_SOLL'].
-    
-    - akzeptiert unterschiedliche Spaltennamen (Kürzel/Code/PL, Einsatztage/Tage/SOLL)
-    - konvertiert deutsch formatierte Zahlen
-    - ignoriert leere oder formelbasierte Felder, wenn keine Werte vorliegen
+    Liest Abrechnungsdatei (CSV oder XLSX), sucht Kürzel & Einsatztage_SOLL
     """
+    import os
+    ext = os.path.splitext(upload.name)[-1].lower()
 
-    # Excel laden (Pandas nimmt openpyxl)
-    try:
-        df = pd.read_excel(upload, engine="openpyxl")
-    except Exception as e:
-        raise ValueError(f"Excel konnte nicht gelesen werden: {e}")
+    if ext == ".csv":
+        # CSV – Header ist in Zeile 7
+        df = pd.read_csv(upload, sep=";", header=7, engine="python", encoding="utf-8")
+    else:
+        # XLSX – auch hier Header evtl. in Zeile 7
+        df = pd.read_excel(upload, engine="openpyxl", header=7)
 
     # Spalten normalisieren
     df.columns = df.columns.astype(str).str.strip().str.lower()
 
-    # Kürzel-Spalte finden
-    kuerzel_col = None
-    for c in ["kürzel", "kuerzel", "pl", "code", "mitarbeiter", "initialen"]:
-        if c in df.columns:
-            kuerzel_col = c
-            break
-
-    # Tage/SOLL-Spalte finden
-    tage_col = None
-    for c in df.columns:
-        if "soll" in c or "tage" in c:
-            tage_col = c
-            break
+    # Kürzel-Spalte
+    kuerzel_col = next((c for c in df.columns if c in ["pl", "kürzel", "kuerzel", "code"]), None)
+    # Solltage-Spalte
+    tage_col = next((c for c in df.columns if "soll" in c and "einsatztage" in c), None)
 
     if not kuerzel_col or not tage_col:
         raise ValueError(f"Keine passenden Spalten gefunden. Gefunden: {list(df.columns)}")
@@ -80,22 +69,18 @@ def read_abrechnung_excel(upload) -> pd.DataFrame:
         columns={kuerzel_col: "Kürzel", tage_col: "Einsatztage_SOLL"}
     )
 
-    # Werte bereinigen
-    out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
+    # Zahlen sauber konvertieren
     out["Einsatztage_SOLL"] = (
         out["Einsatztage_SOLL"]
         .astype(str)
-        .str.replace(r"[^0-9,.\-]", "", regex=True)   # nur Zahlenzeichen behalten
-        .str.replace(".", "", regex=False)            # Tausenderpunkte löschen
-        .str.replace(",", ".", regex=False)           # Komma → Punkt
+        .str.replace(r"[^0-9,.\-]", "", regex=True)
+        .str.replace(".", "", regex=False)   # Tausenderpunkt raus
+        .str.replace(",", ".", regex=False)  # Komma -> Punkt
     )
     out["Einsatztage_SOLL"] = pd.to_numeric(out["Einsatztage_SOLL"], errors="coerce").fillna(0.0)
+    out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
 
-    # Nur Zeilen mit gültigem Kürzel behalten
-    out = out[out["Kürzel"] != ""]
-    out = out.groupby("Kürzel", as_index=False)["Einsatztage_SOLL"].sum()
-
-    return out
+    return out.groupby("Kürzel", as_index=False)["Einsatztage_SOLL"].sum()
 
 
 def lade_mapping():
@@ -404,37 +389,21 @@ elif page == "💰 Abrechnungs-Vergleich":
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
     )
 
-    # Datei hochladen (XLSX bevorzugt; CSV optional als Fallback)
+    # Datei hochladen
     upload = st.file_uploader("Lade eine Abrechnungs-Datei hoch (XLSX oder CSV)", type=["csv", "xlsx"])
     if not upload:
         st.stop()
 
-    # --- 1) XLSX einlesen ---
-    abr = None
-    if upload.name.lower().endswith(".xlsx"):
-        try:
-            abr = read_abrechnung_excel(upload)  # nutzt die neue Funktion
-            st.success(f"Excel erkannt: {len(abr)} Zeilen (Spalten: Kürzel, Einsatztage_SOLL).")
-            st.dataframe(abr.head(50), use_container_width=True)
-        except Exception as e:
-            st.error(f"Excel konnte nicht gelesen werden: {e}")
-            st.stop()
-
-    # --- 2) CSV-Fallback ---
-    if abr is None and upload.name.lower().endswith(".csv"):
-        try:
-            abr = read_abrechnung_csv(upload)
-            st.success(f"CSV erkannt: {len(abr)} Zeilen (Spalten: Kürzel, Einsatztage_SOLL).")
-            st.dataframe(abr.head(50), use_container_width=True)
-        except Exception as e:
-            st.error(f"CSV konnte nicht gelesen werden: {e}")
-            st.stop()
-
-    if abr is None:
-        st.error("Keine gültige Abrechnungsdatei erkannt.")
+    # --- 1) Abrechnungsdatei einlesen ---
+    try:
+        abr = read_abrechnung(upload)
+        st.success(f"Datei erkannt: {len(abr)} Zeilen (Spalten: Kürzel, Einsatztage_SOLL).")
+        st.dataframe(abr.head(50), use_container_width=True)
+    except Exception as e:
+        st.error(f"Abrechnungsdatei konnte nicht gelesen werden: {e}")
         st.stop()
 
-    # --- 3) Zeitdaten (IST) aufbereiten ---
+    # --- 2) Zeitdaten (IST) aufbereiten ---
     df_all = st.session_state.get("df")
     kuerzel_map = st.session_state.get("kuerzel_map", lade_kuerzel())
 
@@ -465,7 +434,7 @@ elif page == "💰 Abrechnungs-Vergleich":
     ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # --- 4) Merge Abrechnung (SOLL) mit IST ---
+    # --- 3) Merge Abrechnung (SOLL) mit IST ---
     merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
@@ -487,7 +456,6 @@ elif page == "💰 Abrechnungs-Vergleich":
         f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. "
         f"Diff_Tage = Tage_IST − Einsatztage_SOLL."
     )
-
 
 elif page == "📤 Export":
     st.title("📤 Datenexport")
