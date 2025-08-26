@@ -404,35 +404,34 @@ elif page == "💰 Abrechnungs-Vergleich":
         min_value=1.0, max_value=12.0, value=8.5, step=0.5
     )
 
-    # Datei hochladen (CSV bevorzugt; XLSX nur als Vorschau)
-    upload = st.file_uploader("Lade eine Abrechnungs-Datei hoch (CSV bevorzugt, zur Not XLSX)", type=["csv", "xlsx"])
+    # Datei hochladen (XLSX bevorzugt; CSV optional als Fallback)
+    upload = st.file_uploader("Lade eine Abrechnungs-Datei hoch (XLSX oder CSV)", type=["csv", "xlsx"])
     if not upload:
         st.stop()
 
-    # --- 1) CSV parsen (robust) ---
+    # --- 1) XLSX einlesen ---
     abr = None
-    if upload.name.lower().endswith(".csv"):
+    if upload.name.lower().endswith(".xlsx"):
         try:
-            abr = read_abrechnung_csv(upload)  # -> DataFrame mit Spalten: Kürzel, Einsatztage_SOLL
+            abr = read_abrechnung_excel(upload)  # nutzt die neue Funktion
+            st.success(f"Excel erkannt: {len(abr)} Zeilen (Spalten: Kürzel, Einsatztage_SOLL).")
+            st.dataframe(abr.head(50), use_container_width=True)
+        except Exception as e:
+            st.error(f"Excel konnte nicht gelesen werden: {e}")
+            st.stop()
+
+    # --- 2) CSV-Fallback ---
+    if abr is None and upload.name.lower().endswith(".csv"):
+        try:
+            abr = read_abrechnung_csv(upload)
             st.success(f"CSV erkannt: {len(abr)} Zeilen (Spalten: Kürzel, Einsatztage_SOLL).")
             st.dataframe(abr.head(50), use_container_width=True)
         except Exception as e:
             st.error(f"CSV konnte nicht gelesen werden: {e}")
             st.stop()
 
-    # --- 2) XLSX-Fallback ---
-    if abr is None and upload.name.lower().endswith(".xlsx"):
-        try:
-            xdf = pd.read_excel(upload, sheet_name=0, header=None)
-        except Exception as e:
-            st.error(f"XLSX konnte nicht gelesen werden: {e}")
-            st.stop()
-        st.info(
-            "XLSX wurde geladen, aber für den Vergleich wird eine CSV mit Spalten "
-            "„Kürzel“ und „Einsatztage_SOLL“ (oder Synonyme) benötigt. "
-            "Bitte exportiere in Excel diesen Bereich als CSV und lade die CSV hier erneut hoch."
-        )
-        st.dataframe(xdf.tail(60), use_container_width=True)
+    if abr is None:
+        st.error("Keine gültige Abrechnungsdatei erkannt.")
         st.stop()
 
     # --- 3) Zeitdaten (IST) aufbereiten ---
@@ -458,7 +457,7 @@ elif page == "💰 Abrechnungs-Vergleich":
               .rename(columns={"Dauer": "Externe_Stunden"})
     )
 
-    # Kürzel joinen – unabhängig davon, ob Datei neu geladen wurde
+    # Kürzel joinen
     df_ext_map = df_ext_group.merge(kuerzel_map, left_on="Mitarbeiter", right_on="Name", how="left")
     df_ext_map = df_ext_map.dropna(subset=["Kürzel"])
     df_ext_map["Kürzel"] = df_ext_map["Kürzel"].astype(str).str.strip()
@@ -466,7 +465,7 @@ elif page == "💰 Abrechnungs-Vergleich":
     ist_by_k = df_ext_map.groupby("Kürzel", as_index=False)["Externe_Stunden"].sum()
     ist_by_k["Tage_IST"] = ist_by_k["Externe_Stunden"] / float(std_pro_tag)
 
-    # --- 4) Merge CSV (SOLL) mit IST ---
+    # --- 4) Merge Abrechnung (SOLL) mit IST ---
     merged = abr.merge(ist_by_k, on="Kürzel", how="outer").fillna(0)
     merged["Diff_Tage"] = merged["Tage_IST"] - merged["Einsatztage_SOLL"]
 
@@ -484,10 +483,11 @@ elif page == "💰 Abrechnungs-Vergleich":
     )
 
     st.caption(
-        f"Logik: CSV liefert „Kürzel“ & „Einsatztage_SOLL“. "
+        f"Logik: Datei liefert „Kürzel“ & „Einsatztage_SOLL“. "
         f"Zeitdaten extern → Externe_Stunden ÷ {std_pro_tag:g} = Tage_IST. "
         f"Diff_Tage = Tage_IST − Einsatztage_SOLL."
     )
+
 
 elif page == "📤 Export":
     st.title("📤 Datenexport")
