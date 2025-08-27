@@ -418,12 +418,30 @@ elif page == "📊 Analyse & Visualisierung":
             export_summary[["Intern", "Extern", "Gesamtstunden"]] = export_summary[["Intern", "Extern", "Gesamtstunden"]].round(2)
             export_summary[["% Intern", "% Extern"]] = export_summary[["% Intern", "% Extern"]].round(1)
 
-            # 🔗 Umsatzdaten laden und joinen
+            # ---------------------------------------------------
+            # Umsatz-Daten einlesen und anhängen
+            # ---------------------------------------------------
             rechnung_df = lade_rechnung()
-            if not rechnung_df.empty:
-                export_summary = export_summary.merge(rechnung_df, left_on="Mitarbeiter", right_on="Kürzel", how="left")
-                export_summary.drop(columns=["Kürzel"], inplace=True)
+            kuerzel_map = st.session_state.get("kuerzel_map", lade_kuerzel())
 
+            if not rechnung_df.empty and not kuerzel_map.empty:
+                # 1) Mitarbeiter -> Kürzel mappen
+                export_summary = export_summary.merge(
+                    kuerzel_map[["Name", "Kürzel"]],
+                    left_on="Mitarbeiter", right_on="Name", how="left"
+                ).drop(columns=["Name"])
+
+                # 2) Kürzel -> Umsatz joinen
+                export_summary = export_summary.merge(
+                    rechnung_df, on="Kürzel", how="left"
+                )
+
+                # 3) Kürzel-Spalte wieder entfernen (optional)
+                export_summary.drop(columns=["Kürzel"], inplace=True, errors="ignore")
+
+            # ---------------------------------------------------
+            # Diagramm
+            # ---------------------------------------------------
             st.subheader("📊 Balkendiagramm Intern/Extern pro Mitarbeiter")
             fig, ax = plt.subplots(figsize=(10, 5))
             export_summary.plot(kind="bar", x="Mitarbeiter", y=["Intern", "Extern"], ax=ax)
@@ -431,10 +449,15 @@ elif page == "📊 Analyse & Visualisierung":
             ax.set_title("Stunden nach Verrechenbarkeit")
             st.pyplot(fig)
 
+            # ---------------------------------------------------
+            # Tabelle
+            # ---------------------------------------------------
             st.subheader("📄 Tabellenansicht")
             st.dataframe(export_summary, use_container_width=True)
 
-            # 📤 PDF-Export direkt hier
+            # ---------------------------------------------------
+            # PDF-Export
+            # ---------------------------------------------------
             if st.button("⬇️ PDF-Bericht exportieren"):
                 fig, ax = plt.subplots(figsize=(10, 5))
                 export_summary.plot(kind="bar", x="Mitarbeiter", y=["Intern", "Extern"], ax=ax)
