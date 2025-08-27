@@ -19,6 +19,7 @@ APP_VERSION = "v0.1.2"
 
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
+os.makedirs("history/rechnung", exist_ok=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helper-Funktionen
@@ -35,6 +36,20 @@ def extrahiere_zweck(text: str):
 # --- CSV robust lesen: erkennt Spaltennamen & Zahlformate ---
 import io
 import re
+
+def lade_rechnung():
+    if os.path.exists("Rechnung.xlsx"):
+        df = pd.read_excel("Rechnung.xlsx", engine="openpyxl")
+        df.columns = df.columns.astype(str).str.strip().str.lower()
+        # Kürzel + Umsatz normalisieren
+        kuerzel_col = next((c for c in df.columns if "kürzel" in c or "kuerzel" in c), None)
+        umsatz_col = next((c for c in df.columns if "umsatz" in c or "euro" in c or "€" in c), None)
+        if kuerzel_col and umsatz_col:
+            out = df[[kuerzel_col, umsatz_col]].rename(columns={kuerzel_col: "Kürzel", umsatz_col: "Umsatz (€)"})
+            out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
+            out["Umsatz (€)"] = pd.to_numeric(out["Umsatz (€)"], errors="coerce").fillna(0.0)
+            return out
+    return pd.DataFrame(columns=["Kürzel", "Umsatz (€)"])
 
 def _norm(s: str) -> str:
     """klein, Leerzeichen raus, nur Buchstaben."""
@@ -194,8 +209,13 @@ if page == "🏠 Start":
 # DATEN HOCHLADEN – mit automatischem Kürzelimport
 # ──────────────────────────────────────────────────────────────────────────────
 elif page == "📁 Daten hochladen":
-    st.title("📁 Excel-Datei hochladen")
-    uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei hoch", type=["xlsx"])
+    st.title("📁 Dateien hochladen")
+
+    # -------------------------
+    # Zeitdaten hochladen
+    # -------------------------
+    st.header("⏱️ Zeitdaten hochladen")
+    uploaded_file = st.file_uploader("Lade eine `.xlsx` Datei mit Zeitdaten hoch", type=["xlsx"], key="zeitdaten_upload")
 
     if uploaded_file:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -239,16 +259,44 @@ elif page == "📁 Daten hochladen":
             except Exception as e:
                 st.warning(f"Konnte neue Mitarbeitende nicht übernehmen: {e}")
 
-            st.success("✅ Datei erfolgreich geladen.")
-            st.subheader("📄 Vorschau der Daten")
+            st.success("✅ Zeitdaten erfolgreich geladen.")
+            st.subheader("📄 Vorschau der Zeitdaten")
             st.dataframe(df, use_container_width=True)
 
-    st.markdown("## 📂 Hochgeladene Dateien")
+    st.markdown("## 📂 Hochgeladene Zeitdaten-Dateien")
     upload_files = sorted(os.listdir("history/uploads"), reverse=True)
     for f in upload_files:
         with open(os.path.join("history/uploads", f), "rb") as file:
             st.download_button(label=f"📄 {f}", data=file.read(), file_name=f)
-            
+
+    # -------------------------
+    # Umsatzdaten hochladen
+    # -------------------------
+    st.header("💰 Umsatzdaten hochladen")
+    rechnung_file = st.file_uploader("Lade eine Excel-Datei mit Kürzel und Umsatz (€)", type=["xlsx"], key="rechnung_upload")
+
+    if rechnung_file:
+        save_path = os.path.join("history/rechnung", "Rechnung.xlsx")
+        with open(save_path, "wb") as f:
+            f.write(rechnung_file.getvalue())
+        st.success("✅ Umsatzdaten gespeichert als Rechnung.xlsx")
+
+        try:
+            rechnung_df = pd.read_excel(rechnung_file, engine="openpyxl")
+            st.subheader("📄 Vorschau der Umsatzdaten")
+            st.dataframe(rechnung_df, use_container_width=True)
+        except Exception as e:
+            st.error(f"Umsatzdaten konnten nicht geladen werden: {e}")
+
+    # Anzeige vorhandener Umsatzdatei
+    if os.path.exists(os.path.join("history/rechnung", "Rechnung.xlsx")):
+        with open(os.path.join("history/rechnung", "Rechnung.xlsx"), "rb") as file:
+            st.download_button(
+                label="📄 Aktuelle Umsatzdaten (Rechnung.xlsx)",
+                data=file.read(),
+                file_name="Rechnung.xlsx"
+            )
+
 elif page == "🧠 Zweck-Kategorisierung":
     st.title("🧠 Zweck-Kategorisierung & Mapping")
 
@@ -344,7 +392,6 @@ elif page == "🧠 Zweck-Kategorisierung":
             speichere_kuerzel(edited_kuerzel_df)
             st.success("✅ Kürzel wurden gespeichert und bleiben erhalten.")
 
-
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit Gesamtübersicht")
 
@@ -353,7 +400,6 @@ elif page == "📊 Analyse & Visualisierung":
         st.warning("Bitte zuerst eine Datei hochladen.")
     else:
         if "Verrechenbarkeit" not in df.columns:
-            # Mapping nur mergen (kein Auto-Klassifizieren)
             df = df.drop(columns=["Verrechenbarkeit"], errors="ignore")
             df = df.merge(st.session_state["mapping_df"], on="Zweck", how="left")
             st.session_state["df"] = df
@@ -372,6 +418,12 @@ elif page == "📊 Analyse & Visualisierung":
             export_summary[["Intern", "Extern", "Gesamtstunden"]] = export_summary[["Intern", "Extern", "Gesamtstunden"]].round(2)
             export_summary[["% Intern", "% Extern"]] = export_summary[["% Intern", "% Extern"]].round(1)
 
+            # 🔗 Umsatzdaten laden und joinen
+            rechnung_df = lade_rechnung()
+            if not rechnung_df.empty:
+                export_summary = export_summary.merge(rechnung_df, left_on="Mitarbeiter", right_on="Kürzel", how="left")
+                export_summary.drop(columns=["Kürzel"], inplace=True)
+
             st.subheader("📊 Balkendiagramm Intern/Extern pro Mitarbeiter")
             fig, ax = plt.subplots(figsize=(10, 5))
             export_summary.plot(kind="bar", x="Mitarbeiter", y=["Intern", "Extern"], ax=ax)
@@ -381,6 +433,44 @@ elif page == "📊 Analyse & Visualisierung":
 
             st.subheader("📄 Tabellenansicht")
             st.dataframe(export_summary, use_container_width=True)
+
+            # 📤 PDF-Export direkt hier
+            if st.button("⬇️ PDF-Bericht exportieren"):
+                fig, ax = plt.subplots(figsize=(10, 5))
+                export_summary.plot(kind="bar", x="Mitarbeiter", y=["Intern", "Extern"], ax=ax)
+                ax.set_ylabel("Stunden")
+                ax.set_title("Stunden nach Verrechenbarkeit")
+                fig.tight_layout()
+
+                image_path = "temp_chart.png"
+                fig.savefig(image_path)
+
+                pdf_path = f"history/exports/bericht_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
+                doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+                elements = [RLImage(image_path, width=500, height=300), Spacer(1, 12)]
+
+                table_data = [export_summary.columns.tolist()] + export_summary.values.tolist()
+                table = Table(table_data)
+                table.setStyle(
+                    TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ]
+                    )
+                )
+                elements.append(table)
+                doc.build(elements)
+
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        "⬇️ PDF-Bericht herunterladen",
+                        data=f.read(),
+                        file_name=os.path.basename(pdf_path),
+                        mime="application/pdf",
+                    )
+
 
 elif page == "💰 Abrechnungs-Vergleich":
     st.title("💰 Vergleich: Zeitdaten vs Rechnungsstellung")
