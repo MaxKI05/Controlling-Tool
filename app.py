@@ -408,6 +408,7 @@ elif page == "📊 Analyse & Visualisierung":
         if export_df.empty:
             st.info("Keine Daten mit 'Intern'/'Extern' vorhanden.")
         else:
+            # Pivot für Stunden
             pivot_df = export_df.groupby(["Mitarbeiter", "Verrechenbarkeit"])["Dauer"].sum().unstack(fill_value=0)
             pivot_df["Gesamtstunden"] = pivot_df.sum(axis=1)
             pivot_df["% Intern"] = (pivot_df.get("Intern", 0) / pivot_df["Gesamtstunden"]) * 100
@@ -424,7 +425,9 @@ elif page == "📊 Analyse & Visualisierung":
             rechnung_df = lade_rechnung()
             kuerzel_map = st.session_state.get("kuerzel_map", lade_kuerzel())
 
-            if not rechnung_df.empty and not kuerzel_map.empty:
+            if rechnung_df.empty:
+                st.warning("⚠️ Keine Umsatzdaten gefunden. Bitte lade unter 📁 Daten hochladen eine Umsatzdatei hoch.")
+            elif not kuerzel_map.empty:
                 # 1) Mitarbeiter -> Kürzel mappen
                 export_summary = export_summary.merge(
                     kuerzel_map[["Name", "Kürzel"]],
@@ -493,4 +496,3 @@ elif page == "📊 Analyse & Visualisierung":
                         file_name=os.path.basename(pdf_path),
                         mime="application/pdf",
                     )
-
