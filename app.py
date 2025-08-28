@@ -42,6 +42,7 @@ def lade_rechnung():
     if os.path.exists(path):
         df = pd.read_excel(path, engine="openpyxl")
         df.columns = df.columns.astype(str).str.strip().str.lower()
+        # Kürzel + Umsatz normalisieren
         kuerzel_col = next((c for c in df.columns if "kürzel" in c or "kuerzel" in c), None)
         umsatz_col = next((c for c in df.columns if "umsatz" in c or "euro" in c or "€" in c), None)
         if kuerzel_col and umsatz_col:
@@ -52,6 +53,7 @@ def lade_rechnung():
             out["Umsatz (€)"] = pd.to_numeric(out["Umsatz (€)"], errors="coerce").fillna(0.0)
             return out
     return pd.DataFrame(columns=["Kürzel", "Umsatz (€)"])
+
 
 def _norm(s: str) -> str:
     """klein, Leerzeichen raus, nur Buchstaben."""
