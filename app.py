@@ -38,14 +38,16 @@ import io
 import re
 
 def lade_rechnung():
-    if os.path.exists("Rechnung.xlsx"):
-        df = pd.read_excel("Rechnung.xlsx", engine="openpyxl")
+    path = os.path.join("history/rechnung", "Rechnung.xlsx")
+    if os.path.exists(path):
+        df = pd.read_excel(path, engine="openpyxl")
         df.columns = df.columns.astype(str).str.strip().str.lower()
-        # Kürzel + Umsatz normalisieren
         kuerzel_col = next((c for c in df.columns if "kürzel" in c or "kuerzel" in c), None)
         umsatz_col = next((c for c in df.columns if "umsatz" in c or "euro" in c or "€" in c), None)
         if kuerzel_col and umsatz_col:
-            out = df[[kuerzel_col, umsatz_col]].rename(columns={kuerzel_col: "Kürzel", umsatz_col: "Umsatz (€)"})
+            out = df[[kuerzel_col, umsatz_col]].rename(
+                columns={kuerzel_col: "Kürzel", umsatz_col: "Umsatz (€)"}
+            )
             out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
             out["Umsatz (€)"] = pd.to_numeric(out["Umsatz (€)"], errors="coerce").fillna(0.0)
             return out
