@@ -1,0 +1,77 @@
+﻿,Zweck,Verrechenbarkeit
+0,+02_AUFTAKTPHASE [+],Intern
+1,+04_AUDITPHASE [+],Extern
+2,. Akquise,Intern
+3,.0 Akquise,Intern
+4,.0 Begleitende Unterstützung (Stundenabrechnung) [+],Intern
+5,.0 Raumluftmessung [+],Extern
+6,.0 Sonderleistungen (Stunden) [+],Intern
+7,.1 Akquise,Intern
+8,.1 Bauprodukte,Extern
+9,.1 Bauprodukte  [+],Extern
+10,.1 Bauprodukte [+],Extern
+11,.1 Bauökologische Begleitung [+],Extern
+12,.1 Gesamtphase,Intern
+13,.1 Gesamtphase [+],Intern
+14,".1 Klären, Sammeln...weiterer erforderlicher Daten… [+]",Intern
+15,.1 Raumtypenermittlung [+],Extern
+16,.1 Ökobilanz (Pauschalbetrag) [+],Extern
+17,.1 Ökobilanz [+],Extern
+18,.2 Bauprodukte 2,Extern
+19,.2 Erstellung eines Klimaschutzfahrplans [+],Extern
+20,.2 Klimarisikoanalyse [+],Extern
+21,.2 Lebenszykluskostenrechnung [+],Extern
+22,.2 Planungsphase [+],Extern
+23,.3 Anmeldung bei der DGNB… [+],Extern
+24,.3 Audit [+],Extern
+25,.3 Ausführungsphase,Extern
+26,.3 Planung & Vorzertifizierung [+],Extern
+27,.3 Planungsphase & Vorzertifizierung [+],Extern
+28,.3 Planungsphase [+],Extern
+29,.3 Planungsphase und Vorzertifizierung [+],Extern
+30,.4 Ausführungsphase [+],Extern
+31,.4 Ausführungsphase [+},Extern
+32,.4 Dokumentation in der Bauausführung [+],Extern
+33,.4 Einreichung bei der DGNB… [+],Extern
+34,.4 Einreichungsphase [+],Extern
+35,.5 Dokumentationsphase und Projekteinreichung,Extern
+36,.5 Einreichungsphase [+],Extern
+37,AP_AUFTAKTPHASE (Pauschalabrechnung),Intern
+38,Akquise ohne Angebot,Intern
+39,Auftaktphase [+],Intern
+40,BEGLEITUNG (Stunden) [+],Extern
+41,Bauökologie,Extern
+42,Begleitung [+],Extern
+43,Besprechungen,Intern
+44,Broschüre & Homepage,Intern
+45,CHECK [+],Intern
+46,Check) [+],Intern
+47,Check… [+],Intern
+48,DGNB Bestand,Extern
+49,DGNB Neubau,Extern
+50,"Deka_ Silberburg Carré, Stuttgart (BREEAM)",Extern
+51,ESG,Extern
+52,"FSD_Niederlassung FEGA & Schmitt, Dresden",Intern
+53,GIB ADL,Intern
+54,KI,Intern
+55,KRA_Klimarisikoanalyse [+],Extern
+56,Koordination I (Stundenabr.) [+],Intern
+57,LCA,Extern
+58,Mieterausbauverpflichtung [+],Extern
+59,NaWoh,Extern
+60,Nürnberg,Extern
+61,Off… [+],Extern
+62,Personal,Intern
+63,QNG,Extern
+64,REELAB_Nachhaltigkeitsberatung REELAB GmbH,Extern
+65,"RLM_Neubau 4_Steinzeugstr. 64, 68229 Mannheim",Extern
+66,Raumluft,Extern
+67,UNGLEHRT_Nachhaltigkeitsberatung UNGLEHRT GmbH,Extern
+68,Verwaltung,Intern
+69,Vorlesungen,Intern
+70,Workshop II für Aurelis GmbH,Extern
+71,ZP_ZWISCHENPHASE (Aufwandsabrechnung) [+],Intern
+72,"Zertifizierung_Glücksteinallee 43+45, Mannheim",Extern
+73,Zirkularität,Extern
+74,Zwischenabschluss [+],Intern
+75,und Recylinganalyse [+],Extern
