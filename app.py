@@ -15,7 +15,7 @@ from reportlab.platypus import Image as RLImage, SimpleDocTemplate, Spacer, Tabl
 # Layout & App-Setup
 # ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Zeitdatenanalyse Dashboard", page_icon="🧠", layout="wide")
-APP_VERSION = "v0.1.5"
+APP_VERSION = "v0.1.6"
 
 os.makedirs("history/exports", exist_ok=True)
 os.makedirs("history/uploads", exist_ok=True)
