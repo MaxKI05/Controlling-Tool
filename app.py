@@ -36,25 +36,29 @@ def extrahiere_zweck(text: str):
 # --- CSV robust lesen: erkennt Spaltennamen & Zahlformate ---
 import io
 import re
-
 def lade_rechnung():
     path = os.path.join("history/rechnung", "Rechnung.xlsx")
     if os.path.exists(path):
-        # Excel OHNE Header einlesen
+        # Excel ohne Header einlesen
         df = pd.read_excel(path, engine="openpyxl", header=None)
 
-        # Erste zwei Spalten extrahieren (A = Kürzel, B = Umsatz)
+        # Erste zwei Spalten nehmen (A = Kürzel, B = Umsatz)
         if df.shape[1] >= 2:
             out = df.iloc[:, :2].copy()
             out.columns = ["Kürzel", "Umsatz (€)"]
 
-            # Datentypen bereinigen
+            # Kürzel normalisieren
             out["Kürzel"] = out["Kürzel"].astype(str).str.strip()
-            out["Umsatz (€)"] = pd.to_numeric(out["Umsatz (€)"], errors="coerce").fillna(0.0)
+
+            # Umsatz numerisch -> dann direkt als String mit Punkt formatieren
+            out["Umsatz (€)"] = (
+                pd.to_numeric(out["Umsatz (€)"], errors="coerce")
+                .fillna(0.0)
+                .map(lambda x: f"{x:,.0f}".replace(",", "."))
+            )
 
             return out
 
-    # Fallback: leeres DataFrame
     return pd.DataFrame(columns=["Kürzel", "Umsatz (€)"])
 
 
