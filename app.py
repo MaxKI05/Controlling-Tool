@@ -170,8 +170,6 @@ with st.sidebar:
             "📁 Daten hochladen",
             "🧠 Zweck-Kategorisierung",
             "📊 Analyse & Visualisierung",
-            "💰 Abrechnungs-Vergleich",
-            "📤 Export",
         ],
         label_visibility="collapsed",
     )
