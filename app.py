@@ -330,29 +330,23 @@ elif page == "🧠 Zweck-Kategorisierung":
                 neue_mapping = []
                 with st.spinner(f"🧠 {len(neue_zwecke)} neue Zwecke – KI klassifiziert..."):
                     for zweck in neue_zwecke:
-    kat = klassifiziere_verrechenbarkeit(zweck)
-    if kat not in ("Intern", "Extern"):
-        kat = ""  # leer lassen statt None
-    neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
+                        kat = klassifiziere_verrechenbarkeit(zweck)
+                        if kat not in ("Intern", "Extern"):
+                            kat = ""  # leer lassen statt None
+                        neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
 
-# Neue Zwecke gezielt unten anhängen
-if neue_mapping:
-    new_df = pd.DataFrame(neue_mapping)
-    mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
-    mapping_df.drop_duplicates(subset=["Zweck"], keep="last", inplace=True)
-    mapping_df = mapping_df.sort_values(
-        by=["Verrechenbarkeit", "Zweck"], 
-        key=lambda col: col.fillna("zzz")  # sorgt dafür, dass "" am Ende steht
-    )
-    st.session_state["mapping_df"] = mapping_df
-    speichere_mapping(mapping_df)
-    st.success("✅ Neues Mapping gespeichert.")
-
-
+                # Neue Zwecke gezielt unten anhängen
                 if neue_mapping:
                     new_df = pd.DataFrame(neue_mapping)
                     mapping_df = pd.concat([mapping_df, new_df], ignore_index=True)
                     mapping_df.drop_duplicates(subset=["Zweck"], keep="last", inplace=True)
+
+                    # Sortierung: erkannte zuerst, unklare ("") ganz unten
+                    mapping_df = mapping_df.sort_values(
+                        by=["Verrechenbarkeit", "Zweck"],
+                        key=lambda col: col.fillna("zzz")
+                    )
+
                     st.session_state["mapping_df"] = mapping_df
                     speichere_mapping(mapping_df)
                     st.success("✅ Neues Mapping gespeichert.")
@@ -414,6 +408,7 @@ if neue_mapping:
             st.session_state["kuerzel_map"] = edited_kuerzel_df
             speichere_kuerzel(edited_kuerzel_df)
             st.success("✅ Kürzel wurden gespeichert und bleiben erhalten.")
+
 
 elif page == "📊 Analyse & Visualisierung":
     st.title("📊 Verrechenbarkeit Gesamtübersicht")
