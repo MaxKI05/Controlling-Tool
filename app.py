@@ -330,7 +330,7 @@ elif page == "🧠 Zweck-Kategorisierung":
                 neue_mapping = []
                 with st.spinner(f"🧠 {len(neue_zwecke)} neue Zwecke – KI klassifiziert..."):
                     for zweck in neue_zwecke:
-                        kat = klassifiziere_verrechenbarkeit(zweck)
+                            kat = klassifiziere_verrechenbarkeit(zweck)
                         if kat not in ("Intern", "Extern"):
                             kat = ""  # leer lassen statt None
                         neue_mapping.append({"Zweck": zweck, "Verrechenbarkeit": kat})
