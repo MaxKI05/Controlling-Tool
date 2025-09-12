@@ -1,0 +1,207 @@
+Zweck,Verrechenbarkeit
++02_AUFTAKTPHASE [+],Intern
++04_AUDITPHASE [+],Extern
+. Akquise,Intern
+.0 Akquise,Intern
+.0 Begleitende Unterstützung (Stundenabrechnung) [+],Intern
+.0 Raumluftmessung [+],Extern
+.0 Sonderleistungen (Stunden) [+],Intern
+.1 Akquise,Intern
+.1 Bauprodukte,Extern
+.1 Bauprodukte  [+],Extern
+.1 Bauprodukte [+],Extern
+.1 Bauökologische Begleitung [+],Extern
+.1 Gesamtphase,Intern
+.1 Gesamtphase [+],Intern
+".1 Klären, Sammeln...weiterer erforderlicher Daten… [+]",Intern
+.1 Raumtypenermittlung [+],Extern
+.1 Ökobilanz (Pauschalbetrag) [+],Extern
+.1 Ökobilanz [+],Extern
+.2 Bauprodukte 2,Extern
+.2 Erstellung eines Klimaschutzfahrplans [+],Extern
+.2 Klimarisikoanalyse [+],Extern
+.2 Lebenszykluskostenrechnung [+],Extern
+.2 Planungsphase [+],Extern
+.3 Anmeldung bei der DGNB… [+],Extern
+.3 Audit [+],Extern
+.3 Ausführungsphase,Extern
+.3 Planung & Vorzertifizierung [+],Extern
+.3 Planungsphase & Vorzertifizierung [+],Extern
+.3 Planungsphase [+],Extern
+.3 Planungsphase und Vorzertifizierung [+],Extern
+.4 Ausführungsphase [+],Extern
+.4 Ausführungsphase [+},Extern
+.4 Dokumentation in der Bauausführung [+],Extern
+.4 Einreichung bei der DGNB… [+],Extern
+.4 Einreichungsphase [+],Intern
+.5 Dokumentationsphase und Projekteinreichung,Extern
+.5 Einreichungsphase [+],Extern
+AP_AUFTAKTPHASE (Pauschalabrechnung),Intern
+AUDITPHASE [+],Extern
+AUFTAKTPHASE [+],Intern
+Akquise,Intern
+Akquise ohne Angebot,Intern
+Anmeldung bei der DGNB… [+],Extern
+Audit [+],Extern
+Auftaktphase [+],Intern
+Ausführungsphase,Extern
+Ausführungsphase [+],Extern
+Ausführungsphase [+},Extern
+BEGLEITUNG (Stunden) [+],Extern
+Bauprodukte,Extern
+Bauprodukte  [+],Extern
+Bauprodukte 2,Extern
+Bauprodukte [+],Extern
+Bauökologie,Extern
+Bauökologische Begleitung [+],Extern
+Begleitende Unterstützung (Stundenabrechnung) [+],Intern
+Begleitung [+],Extern
+Besprechungen,Intern
+Broschüre & Homepage,Intern
+CHECK [+],Intern
+Check) [+],Intern
+Check… [+],Intern
+DGNB Bestand,Extern
+DGNB Neubau,Extern
+"Deka_ Silberburg Carré, Stuttgart (BREEAM)",Extern
+Dokumentation in der Bauausführung [+],Extern
+Dokumentationsphase und Projekteinreichung,Extern
+ESG,Extern
+Einreichung bei der DGNB… [+],Extern
+Einreichungsphase [+],Extern
+Erstellung eines Klimaschutzfahrplans [+],Extern
+"FSD_Niederlassung FEGA & Schmitt, Dresden",Intern
+GIB ADL,Intern
+Gesamtphase,Intern
+Gesamtphase [+],Intern
+KI,Intern
+KRA_Klimarisikoanalyse [+],Extern
+Klimarisikoanalyse [+],Extern
+"Klären, Sammeln...weiterer erforderlicher Daten… [+]",Intern
+Koordination I (Stundenabr.) [+],Intern
+LCA,Extern
+Lebenszykluskostenrechnung [+],Extern
+Mieterausbauverpflichtung [+],Extern
+NaWoh,Extern
+Nürnberg,Extern
+Off… [+],Extern
+Personal,Intern
+Planung & Vorzertifizierung [+],Extern
+Planungsphase & Vorzertifizierung [+],Extern
+Planungsphase [+],Extern
+Planungsphase und Vorzertifizierung [+],Extern
+QNG,Extern
+REELAB_Nachhaltigkeitsberatung REELAB GmbH,Extern
+"RLM_Neubau 4_Steinzeugstr. 64, 68229 Mannheim",Extern
+Raumluft,Extern
+Raumluftmessung [+],Extern
+Raumtypenermittlung [+],Extern
+Sonderleistungen (Stunden) [+],Intern
+UNGLEHRT_Nachhaltigkeitsberatung UNGLEHRT GmbH,Extern
+Verwaltung,Intern
+Vorlesungen,Intern
+Workshop II für Aurelis GmbH,Extern
+ZP_ZWISCHENPHASE (Aufwandsabrechnung) [+],Intern
+"Zertifizierung_Glücksteinallee 43+45, Mannheim",Extern
+Zirkularität,Extern
+Zwischenabschluss [+],Intern
+und Recylinganalyse [+],Extern
+Ökobilanz (Pauschalbetrag) [+],Extern
+Ökobilanz [+],Extern
++02_Auftaktphase [+],Intern
++04_Auditphase [+],Extern
+.0 Vorabphase (Stundenabrechnung) [+],Intern
+.1 Bauprodukte[+],Extern
+.1 Bauproduktgrundlagen,Extern
+".1 Klären, Sammeln erforderlicher Daten [+]",Intern
+.1 Zusatzleistungen (Kompensationsvereinbarung) [+],Extern
+.1 Ökobilanz,Extern
+.2 Lebenszykluskostenrechnung,Extern
+.2 Lebenszykluskostenrechnung[+],Extern
+.2 Planungsphase[+],Extern
+.2 Zielvereinbarung und Dokumentenliste,Intern
+.3  Vorzertifizierung [+],Extern
+.3 Ausführungsphase [+],Extern
+.3 Bauprodukte_NEU [+],Extern
+.3 Vorzertifizierung [+],Extern
+.4 Bauproduktgrundlagen,Extern
+.4 Einreichung bei der DGNB [+],Extern
+.4 Einreichungsphase,Extern
+.4 Mieterausbauverpflichtungen [+],Extern
+""".5 Bauproduktgrundlagen """"ENV 1.2"""" [+]""",Intern
+.5 Dokumentationsphase und Projekteinreichung [+],Extern
+.5 Weitere Klärungen [+],Intern
+Ausbildung & Lizenzerhalt,Intern
+BEGLEITUNG (Stundenabrechnung) [+],Intern
+Beratung (Stundenabrechnung),Extern
+HINES_Nachhaltigkeitsberatung HINES GmbH,Extern
+"JUZEG_Neubau Jugendzentrum, Gersthofen",Extern
+LIVE_Portfoliozertifizierung,Extern
+MPC_Nachhaltigkeitsberatung MPC Capital GmbH,Extern
+Mitarbeitereinarbeitung,Intern
+N5_Nachhaltigkeitsberatung BauConcept,Extern
+PRADERA_Nachhaltigkeitsberatung PRADERA GmbH,Extern
+Veranstaltungen,Intern
+.1 Ökobilanz[+],Extern
+.2 Sonderleistungen [+],Extern
+.3 Bauprodukte 3 [+],Extern
+.4 Bauproduktgrundlagen[+],Extern
+AVENTOS_Nachhaltigkeitsberatung AVENTOS GmbH,Extern
+"BCW.006_Bildungscampus West, Baufeld D, Heilbronn",Extern
+"BEKA_BENTO Karlsfeld, Dieselstraße Karlsfeld",Extern
+Begleitung) [+],Extern
+Bereich,Intern
+Digitalisierung,Intern
+"RLM_PFALZER_Talstraße 3, 87700 Memmingen",Extern
+"RLM_Platzhalter Musterprojekt, Musterstadt",Intern
+Social Media,Intern
+"Straße, Mannheim",Extern
+"WZD_Wohnquartier Worzeldorf, Nürnberg (IRE)",Extern
+& Recyclinganalyse[+],Extern
+.0 Entwicklung (ohne Budget) [+],Intern
+.0 Vorabphase (Stundenabr) [+],Intern
+.1 Bauökologisches Pflichtenheft [+],Extern
+.2 Planungsphase,Extern
+.2 Sonderleistungen,Extern
+""".4 Bauproduktgrundlage """"ENV 1.3""""[+]""",Extern
+Check,Intern
+"Geschäftsstelle, Stuttgart",Intern
+II_Handbuch Bauprodukte im Mieterausbau,Intern
+MÜNSTER_Neubauten BLB NRW Münster (BNB),Extern
+RLM_GIZ Campus Eschborn,Extern
+"RLM_Wohnbebauung LANGEN, Steubenstraße Langen",Extern
+Rezertifizierung),Extern
+und Recyclinganalyse,Extern
+und Recyclinganalyse [+],Extern
+& Recyclinganalyse,Extern
+.1 Auftaktphase,Intern
+.2 Zielvereinbarung und Dokumentenliste [+],Intern
+.5 Bauproduktgrundlagen „ENV 1.2“ [+],Extern
+BE Begleitung (Stundenabrechnung),Intern
+BiRN,Intern
+Infrastruktur,Extern
+"RLM_Grünstadter Straße 13, Obersülzen",Extern
+& Recyclinganalyse [+],Extern
+.0  Gesamtphase [+],Intern
+.0 Sonderpauschale [+],Intern
+.1 Bauprodukte 1,Extern
+.2 Raumluftmessung [+],Extern
+.4 Ausführungsphase,Extern
+AGD_Altmarkt Galerie Dresden (ECE Hospitality),Extern
+AP Ausführungsphase [+],Extern
+Automatisierung & Digitalisierung,Intern
+B&O_Nachhaltigkeitsberatung B&O Service GmbH,Extern
+BP Bauprodukteprüfungen [+],Extern
+Begleitung und Dokumentation (1/2) [+],Extern
+CHECK + ZIELVEREINBARUNG [+],Intern
+Center Leipzig (BREEAM),Extern
+LCC Lebenszykluskostenrechnung [+],Extern
+"NBM_ Neubau Bauhof mit DRK, Muggensturm",Extern
+PP Planungsphase [+],Extern
+PP_PLANUNGSPHASE [+],Extern
+Platzhalter Musterprojekt 1,Intern
+SE_Strategieentwicklung [+],Intern
+Weiterbegleitung,Intern
+ZB Zirkuläres Bauen [+],Extern
+ZV Zielvereinbarung [+],Intern
+ZV_ZIELVEREINBARUNG [+],Intern
